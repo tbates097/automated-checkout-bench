@@ -24,16 +24,16 @@ from Logger import TextLogger
 from DecodeFaults import decode_faults
 from sheets_update import Sheets
 
-class hex_strut_checkout():
+class stage_checkout():
     '''
     This program is intended to take a complete set of hexapod struts through an automated check-out procedure.
     '''
-    def __init__(self, hex_type, encoder, speed, burnin_time, job, op, comments, text_widget, window, connected_axes, duty_cycle, **kwargs):
+    def __init__(self, stage_type, encoder, travel, speed, burnin_time, job, op, comments, text_widget, window, connected_axes, duty_cycle, **kwargs):
         """
         Initialization method for the hex_strut_checkout class.
 
         Parameters:
-            hex_type (str): The type of hexapod being checked out (e.g. 'HEX300-230HL', 'HEX500-350HL', etc.)
+            stage_type (str): The type of hexapod being checked out
             encoder (str): The type of encoder being used (e.g. 'E1', 'E2', etc.)
             speed (int): The speed at which the struts will move during the check-out (in mm/s)
             burnin_time (int): The length of time the struts will run during the check-out (in hours)
@@ -46,8 +46,9 @@ class hex_strut_checkout():
             duty_cycle (int): The percentage of the time the struts will be moving during the check-out
             **kwargs: Any additional keyword arguments
         """
-        self.hex_type = hex_type
+        self.stage_type = stage_type
         self.encoder = encoder
+        self.travel = travel
         self.speed = speed
         self.burnin_time = burnin_time
         self.job = job
@@ -95,8 +96,8 @@ class hex_strut_checkout():
         self.reenable_run_button = reenable_run_button
         self.init_logger()
         self.init_specs()
-        self.fault_log.info(f'Hexapod Model: {self.hex_type}\nSerial Number: {self.job}\n')
-        self.strut_info.info(f'Hexapod Model: {self.hex_type}\nSerial Number: {self.job}\n')
+        self.fault_log.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
+        self.stage_info.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
         
         # Initialize the lists of commands for each axis
         self.list_commands_ccw_pos = []
@@ -110,7 +111,7 @@ class hex_strut_checkout():
             self.list_commands_ccw_pos.append(self.param_dict.get('nominal_ccw_pos'))
             self.list_commands_cw_pos.append(self.param_dict.get('nominal_cw_pos'))
             self.list_commands_zero.append(0)
-            self.list_velocity.append(5)
+            self.list_velocity.append(self.speed)
             self.list_low_velocity.append(0.5)
             
         # Set up the motion target mode to Absolute
@@ -1543,14 +1544,14 @@ class hex_strut_checkout():
         self.fault_log.setLevel(logging.INFO)
 
         # Configure the second log file for limit information logging
-        strut_log_file = os.path.join(self.job_log_dir, f'{self.job} Strut Info.log')
-        self.strut_info = logging.getLogger('strut_info')
-        strut_handler = logging.FileHandler(strut_log_file)
-        strut_handler.setLevel(logging.INFO)
-        strut_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        strut_handler.setFormatter(strut_formatter)
-        self.strut_info.addHandler(strut_handler)
-        self.strut_info.setLevel(logging.INFO)
+        stage_log_file = os.path.join(self.job_log_dir, f'{self.job} Stage Info.log')
+        self.stage_info = logging.getLogger('stage_info')
+        stage_handler = logging.FileHandler(stage_log_file)
+        stage_handler.setLevel(logging.INFO)
+        stage_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        stage_handler.setFormatter(stage_formatter)
+        self.stage_info.addHandler(stage_handler)
+        self.stage_info.setLevel(logging.INFO)
         
     def init_specs(self):
         """
@@ -1560,13 +1561,13 @@ class hex_strut_checkout():
         The parameters include the nominal travel, hardstop travel, limit travel, limit-to-hardstop distance,
         maximum current clamp, low current clamp, nominal home offset, and limit home speed.
         """
-        self.hex150_125_params = {
-            'nominal_travel': 16.5,
+        self.stage_params = {
+            'nominal_travel': self.travel,
             'hardstop_travel': 20.5,
             'limit_travel': 18.5,
             'limit_to_hardstop': 0.5,
-            'nominal_cw_pos': 8.25,
-            'nominal_ccw_pos': -8.25,
+            'nominal_cw_pos': self.travel / 2,
+            'nominal_ccw_pos': -self.travel / 2,
             'max_current_clamp': 4.4,
             'low_current_clamp': 0.7,
             'nominal_home_offset': 8.25,

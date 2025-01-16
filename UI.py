@@ -15,17 +15,24 @@ Created on Tue Sep 24 13:09:21 2024
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, OptionMenu, font
 import automation1 as a1
-from checkout_test import hex_strut_checkout
+from checkout_test import stage_checkout
 import gc
 import json
 import ctypes
 import threading
+import requests
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
+
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxitKs6Iq8o3TE6mHoQfRC1bI930RLrUIkMjDJParAIG8c96CIWCqEdIzRDmTOIoj9p/exec"
+
+stage_dict_path = os.path.join(os.getcwd(), "stage_dict.json")
+with open(stage_dict_path, 'r') as f:
+    STAGE_DICT = json.load(f) 
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -41,6 +48,7 @@ def load_user_inputs():
         with open(USER_DATA_FILE, 'r') as f:
             return json.load(f)
     return {}
+
 
 def UI():
     global window
@@ -63,7 +71,7 @@ def UI():
     
     # Set desired window size
     window_height = 950
-    window_width = 1000
+    window_width = 775
     
     # Ensure the window size does not exceed usable screen dimensions
     window_width = min(window_width, usable_width)
@@ -85,7 +93,7 @@ def UI():
     # MAIN USER INPUT FRAME
     '''
     
-    input_frame_width = 1000
+    input_frame_width = 700
     input_frame_height = 800
     
     input_frame = tk.Frame(master=window, width=input_frame_width, height=input_frame_height)
@@ -93,12 +101,12 @@ def UI():
     input_frame.grid_propagate(True)
     
     # Configure columns and rows
-    input_frame.columnconfigure([0, 1, 2, 3, 4], weight=1, minsize=700 / 4, uniform='column')
+    input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=700 / 4, uniform='column')
     input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], weight=1, minsize=1)
 
     # Define row indices
     input_frame.h1_row = 0
-    input_frame.type_row = 1
+    input_frame.ID_row = 1
     input_frame.h2_row = 2
     input_frame.encoder_row = 3
     input_frame.speed_row = 4
@@ -170,10 +178,10 @@ def UI():
         """
         Starts the test thread for running the test.
         """
-        global test_thread
+        global test_thread, stage_type
         test_thread = threading.Thread(target=run_test, daemon=True)
         test_thread.start()
-        #print('Test Thread Started')
+        print(f'Stage Type: {stage_type}')
         
         # Disable the Run button during the test
         btn_run.config(state=tk.DISABLED)
@@ -251,8 +259,8 @@ def UI():
                 connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
         
         # Run the test
-        strut_test = hex_strut_checkout(
-            hex_type, encoder, speed, BI_time, job, op, 
+        strut_test = stage_checkout(
+            stage_type, encoder_var, travel_var, speed, BI_time, job, op, 
             comm, txt_outStr, window, connected_axes, duty_cycle
         )
         strut_test.test(controller, reenable_run_button)  
@@ -260,6 +268,7 @@ def UI():
         cleanup_resources()
         print('Cleaning Up')
         return
+    
     def cleanup_resources(test=None):
         """
         Cleans up resources such as threads, connections, and resets global states.
@@ -279,27 +288,61 @@ def UI():
         
         gc.collect()
         #print("Resources cleaned up and garbage collection completed.")
-        
-    def test_type_def():
-        global hex_type
-        if hexapod.get() == "150-125":
-            hex_type = 'HEX150-125HL'
-        elif hexapod.get() == "150-140":
-            hex_type = 'HEX150-140HL'
-        elif hexapod.get() == "300":
-            hex_type = 'HEX300-230HL'
-        elif hexapod.get() == "500":
-            hex_type = 'HEX500-350HL'
-    
-    def encoder_def():
-        global encoder
-        if enc.get() == "E1":
-            encoder = 'E1'
-        elif enc.get() == "E2":
-            encoder = 'E2'
-        elif enc.get() == "E3":
-            encoder = 'E3'
-    
+
+    global encoder_var, travel_var, encoder_menu, travel_menu
+    part_number = tk.StringVar(value="Scan Part Number Barcode")
+    encoder_var = tk.StringVar(value="None")
+    travel_var = tk.StringVar(value="None")
+
+    def fetch_sheet_data(part_number):
+        try:
+            response = requests.get(GOOGLE_SCRIPT_URL, params={"partNumber": part_number})
+            response.raise_for_status()
+
+            # Parse the response as JSON
+            data = response.json()
+
+            # Check for errors in the response
+            if "error" in data:
+                print("Error from Apps Script:", data["error"])
+                return None
+            return data
+        except requests.exceptions.RequestException as e:
+            print(f"Request Error: {e}")
+            return None
+        except ValueError as e:
+            print(f"JSON Parsing Error: {e}")
+            return None
+
+    # Populate dropdown menus
+    def populate_dropdowns(data):
+        if data:
+            # Sort the encoder and travel data
+            sorted_encoders = sorted(data["directLinearFeedback"])  # Alphabetical order
+            sorted_travel = sorted(data["travel"], reverse=True)  # Numerical order
+
+            # Update encoder dropdown
+            encoder_var.set("Select Encoder")
+            encoder_menu["menu"].delete(0, "end")
+            for item in sorted_encoders:
+                encoder_menu["menu"].add_command(label=item, command=tk._setit(encoder_var, item))
+
+            # Update travel dropdown
+            travel_var.set("Select Travel")
+            travel_menu["menu"].delete(0, "end")
+            for item in sorted_travel:
+                travel_menu["menu"].add_command(label=item, command=tk._setit(travel_var, item))
+
+            
+        else:
+            print("Failed to populate dropdowns.")
+
+    def on_scan():
+        part_number = part_entry.get().strip()
+        if part_number:
+            data = fetch_sheet_data(part_number)
+            populate_dropdowns(data)
+
     def time_def():
         global BI_state
         if time_var.get() == 'default':
@@ -309,55 +352,54 @@ def UI():
             ent_other["state"] = tk.NORMAL
             BI_state = 'other'
     
+    def on_entry_focus(event):
+        # Select all text in the entry field
+        event.widget.select_range(0, tk.END)
+
     # Rotary Calibration Tab UI Elements
+    label_font = font.Font(family="Helvetica", size=10, weight="bold")
+    button_font = font.Font(family="Arial", size=12, weight="bold") 
 
     # Test Type Selection
-    lbl_test = tk.Label(master=input_frame, text="Part Number:")
-    lbl_test.grid(row=input_frame.type_row, column=0, padx=5, pady=5)
+    lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
+    lbl_stage.grid(row=input_frame.ID_row, column=0, padx=5, pady=5)
+
+    part_entry = tk.Entry(input_frame, textvariable=part_number, width=25)
+    part_entry.grid(row=input_frame.ID_row, column=1, padx=5, pady=5)
+    part_entry.bind("<FocusIn>", on_entry_focus)
+    part_entry.focus()
+
+    scan_button = tk.Button(input_frame, text="Retrieve Stage Options", width=20, height=1, font=button_font, background="lightgray", command=on_scan)
+    scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=5, pady=5)
+
+    travel_label = tk.Label(master=input_frame, text="Select Travel", font=label_font)
+    travel_label.grid(row=input_frame.encoder_row, column=0, padx=5, pady=5)
+
+    travel_menu = OptionMenu(input_frame, travel_var, "None")
+    travel_menu.grid(row=input_frame.encoder_row, column=1, padx=5, pady=5)
+
+    lbl_encoder = tk.Label(master=input_frame, text="Select Encoder", font=label_font)
+    lbl_encoder.grid(row=input_frame.encoder_row, column=2, padx=5, pady=5)
+
+    encoder_menu = tk.OptionMenu(input_frame, encoder_var, "None")
+    encoder_menu.grid(row=input_frame.encoder_row, column=3, padx=5, pady=5)
     
-    hexapod = tk.StringVar(value=0)
-    hex150_125 = tk.Radiobutton(master=input_frame, text="HEX150-125HL", variable=hexapod, value="150-125", command=test_type_def)
-    hex150_125.grid(row=input_frame.type_row, column=1, padx=5, pady=5)
-    
-    hex150_140 = tk.Radiobutton(master=input_frame, text="HEX150-140HL", variable=hexapod, value="150-140", command=test_type_def)
-    hex150_140.grid(row=input_frame.type_row, column=2, padx=5, pady=5)
-    
-    hex300 = tk.Radiobutton(master=input_frame, text="HEX300-230HL", variable=hexapod, value="300", command=test_type_def)
-    hex300.grid(row=input_frame.type_row, column=3, padx=5, pady=5)
-    
-    hex500 = tk.Radiobutton(master=input_frame, text="HEX500-350HL", variable=hexapod, value="500", command=test_type_def)
-    hex500.grid(row=input_frame.type_row, column=4, padx=5, pady=5)
-    
-    # Test Type Selection
-    lbl_enc = tk.Label(master=input_frame, text="Select Encoder:")
-    lbl_enc.grid(row=input_frame.encoder_row, column=0, padx=5, pady=5)
-    
-    enc = tk.StringVar(value=0)
-    E1 = tk.Radiobutton(master=input_frame, text="E1", variable=enc, value="E1", command=encoder_def)
-    E1.grid(row=input_frame.encoder_row, column=1, padx=5, pady=5)
-    
-    E2 = tk.Radiobutton(master=input_frame, text="E2", variable=enc, value="E2", command=encoder_def)
-    E2.grid(row=input_frame.encoder_row, column=2, padx=5, pady=5)
-    
-    E3 = tk.Radiobutton(master=input_frame, text="E3", variable=enc, value="E3", command=encoder_def)
-    E3.grid(row=input_frame.encoder_row, column=3, padx=5, pady=5)
-    
-    # Total Travel Input
-    lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1)
+    # Velocity Input
+    lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1, font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=5, pady=5)
     
     var_speed = tk.DoubleVar(value=speed_value)
-    ent_speed = tk.Entry(master=input_frame, textvariable=var_speed, width=25)
+    ent_speed = tk.Entry(master=input_frame, textvariable=var_speed, width=15)
     ent_speed.grid(row=input_frame.speed_row, column=1, padx=5, pady=5)
     
-    lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", width=25, height=1)
+    lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", width=25, height=1, font=label_font)
     lbl_duty_cycle.grid(row=input_frame.speed_row, column=2, padx=5, pady=5)
     
     var_duty_cycle = tk.DoubleVar(value=duty_cycle_value)
-    ent_duty_cycle = tk.Entry(master=input_frame, textvariable=var_duty_cycle, width=25)
+    ent_duty_cycle = tk.Entry(master=input_frame, textvariable=var_duty_cycle, width=15)
     ent_duty_cycle.grid(row=input_frame.speed_row, column=3, padx=5, pady=5)
     
-    lbl_cycles = tk.Label(master=input_frame, text="Burn-In Time", width=25, height=1)
+    lbl_cycles = tk.Label(master=input_frame, text="Burn-In Time", width=25, height=1, font=label_font)
     lbl_cycles.grid(row=input_frame.cycles_row, column=0, padx=5, pady=5)
     
     time_var = tk.StringVar(value=0)
@@ -368,11 +410,11 @@ def UI():
     other.grid(row=input_frame.cycles_row, column=2, padx=5, pady=5)
     
     var_time = tk.IntVar(value=0)
-    ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=25,state=tk.DISABLED)
+    ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=15,state=tk.DISABLED)
     ent_other.grid(row=input_frame.cycles_row, column=3, padx=5, pady=5)
     
     # Stage Serial Number Input
-    lbl_job = tk.Label(master=input_frame, text="Job Number", width=25, height=1)
+    lbl_job = tk.Label(master=input_frame, text="Job Number", width=25, height=1, font=label_font)
     lbl_job.grid(row=input_frame.job_row, column=0, padx=5, pady=5)
     
     var_job = tk.StringVar(value=job_value)
@@ -380,7 +422,7 @@ def UI():
     ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Operator Input
-    lbl_op = tk.Label(master=input_frame, text="Operator", width=25, height=1)
+    lbl_op = tk.Label(master=input_frame, text="Operator", width=25, height=1, font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=5, pady=5)
     
     var_op = tk.StringVar(value=op_value)
@@ -388,7 +430,7 @@ def UI():
     ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Comments Input
-    lbl_comments = tk.Label(master=input_frame, text="Comments", width=25, height=1)
+    lbl_comments = tk.Label(master=input_frame, text="Comments", width=25, height=1, font=label_font)
     lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=5)
     
     var_comm = tk.StringVar(value=comm_value)
@@ -396,8 +438,8 @@ def UI():
     ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Run and Open Plot Buttons
-    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread)
-    btn_run.grid(row=input_frame.run_row, column=0, padx=5, pady=5)
+    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='green', font=button_font)
+    btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=5, pady=5)
     
 # =============================================================================
 #     btn_open = tk.Button(master=input_frame, text="Open Plot", width=25, height=1, command=open_Plot)
