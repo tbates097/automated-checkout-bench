@@ -23,12 +23,15 @@ import json
 import ctypes
 import threading
 import requests
+from BallscrewSizer import App
+from PyQt5.QtWidgets import QApplication
+
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxitKs6Iq8o3TE6mHoQfRC1bI930RLrUIkMjDJParAIG8c96CIWCqEdIzRDmTOIoj9p/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwvlJKB4IjiPW67djxLHxT62VxmEDe9_tBQtZk3OzXlqPuBjlAxwgJW3zQBwsYN29Df/exec"
 
 stage_dict_path = os.path.join(os.getcwd(), "stage_dict.json")
 with open(stage_dict_path, 'r') as f:
@@ -48,6 +51,7 @@ def load_user_inputs():
         with open(USER_DATA_FILE, 'r') as f:
             return json.load(f)
     return {}
+
 
 
 def UI():
@@ -107,8 +111,8 @@ def UI():
     # Define row indices
     input_frame.h1_row = 0
     input_frame.ID_row = 1
-    input_frame.h2_row = 2
-    input_frame.encoder_row = 3
+    input_frame.config_button_row = 2
+    input_frame.h2_row = 3
     input_frame.speed_row = 4
     input_frame.cycles_row = 5
     input_frame.h3_row = 6
@@ -120,21 +124,10 @@ def UI():
     input_frame.out_row = 12
 
     # Create horizontal separators
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h1_row, column=0, columnspan=5, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h2_row, column=0, columnspan=5, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h3_row, column=0, columnspan=5, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h4_row, column=0, columnspan=5, sticky='nsew')
-
-# =============================================================================
-#     # Adjust column weights so the vertical separator aligns correctly
-#     input_frame.columnconfigure(3, weight=1)
-#     input_frame.columnconfigure(4, weight=1)
-#     
-#     # Add the vertical separator to the frame
-#     ttk.Separator(master=window, orient='vertical').grid(row=input_frame.h1_row, column=4, rowspan=12, sticky='nsw', pady=(4, 0))
-#     # Add the vertical separator to the frame
-#     ttk.Separator(master=window, orient='vertical').grid(row=input_frame.h1_row, column=4, rowspan=12, sticky='nsw', pady=(7, 0))
-# =============================================================================
+    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h1_row, column=0, columnspan=4, sticky='nsew')
+    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h2_row, column=0, columnspan=4, sticky='nsew')
+    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h3_row, column=0, columnspan=4, sticky='nsew')
+    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='nsew')
     
     # Load stored data or set defaults
     speed_value = stored_data.get("speed", 360)
@@ -260,7 +253,7 @@ def UI():
         
         # Run the test
         strut_test = stage_checkout(
-            stage_type, encoder_var, travel_var, speed, BI_time, job, op, 
+            stage_type, speed, BI_time, job, op, 
             comm, txt_outStr, window, connected_axes, duty_cycle
         )
         strut_test.test(controller, reenable_run_button)  
@@ -289,59 +282,23 @@ def UI():
         gc.collect()
         #print("Resources cleaned up and garbage collection completed.")
 
-    global encoder_var, travel_var, encoder_menu, travel_menu
+    global part_number
     part_number = tk.StringVar(value="Scan Part Number Barcode")
-    encoder_var = tk.StringVar(value="None")
-    travel_var = tk.StringVar(value="None")
-
-    def fetch_sheet_data(part_number):
-        try:
-            response = requests.get(GOOGLE_SCRIPT_URL, params={"partNumber": part_number})
-            response.raise_for_status()
-
-            # Parse the response as JSON
-            data = response.json()
-
-            # Check for errors in the response
-            if "error" in data:
-                print("Error from Apps Script:", data["error"])
-                return None
-            return data
-        except requests.exceptions.RequestException as e:
-            print(f"Request Error: {e}")
-            return None
-        except ValueError as e:
-            print(f"JSON Parsing Error: {e}")
-            return None
-
-    # Populate dropdown menus
-    def populate_dropdowns(data):
-        if data:
-            # Sort the encoder and travel data
-            sorted_encoders = sorted(data["directLinearFeedback"])  # Alphabetical order
-            sorted_travel = sorted(data["travel"], reverse=True)  # Numerical order
-
-            # Update encoder dropdown
-            encoder_var.set("Select Encoder")
-            encoder_menu["menu"].delete(0, "end")
-            for item in sorted_encoders:
-                encoder_menu["menu"].add_command(label=item, command=tk._setit(encoder_var, item))
-
-            # Update travel dropdown
-            travel_var.set("Select Travel")
-            travel_menu["menu"].delete(0, "end")
-            for item in sorted_travel:
-                travel_menu["menu"].add_command(label=item, command=tk._setit(travel_var, item))
-
-            
-        else:
-            print("Failed to populate dropdowns.")
 
     def on_scan():
-        part_number = part_entry.get().strip()
-        if part_number:
-            data = fetch_sheet_data(part_number)
-            populate_dropdowns(data)
+        file_path = r'C:\Users\tbates\Python\automated-checkout-bench\Temp Files\specs.txt'
+        app = QApplication([])
+        app_instance = App()
+        stage_specs = app_instance.show_popup_config_dialog(config='stage', stage=part_entry.get())
+
+        specs_dict = {}
+
+        with open(file_path, 'r') as file:
+            for line in file:
+                if ':' in line:
+                    key, *value = line.strip().split(':')
+                    specs_dict[key] = value[0] if value else None
+        print(f'Stage Specs: {specs_dict}')
 
     def time_def():
         global BI_state
@@ -365,25 +322,13 @@ def UI():
     lbl_stage.grid(row=input_frame.ID_row, column=0, padx=5, pady=5)
 
     part_entry = tk.Entry(input_frame, textvariable=part_number, width=25)
-    part_entry.grid(row=input_frame.ID_row, column=1, padx=5, pady=5)
+    part_entry.grid(row=input_frame.ID_row, column=1, columnspan=2, padx=5, pady=5)
     part_entry.bind("<FocusIn>", on_entry_focus)
     part_entry.focus()
 
     scan_button = tk.Button(input_frame, text="Retrieve Stage Options", width=20, height=1, font=button_font, background="lightgray", command=on_scan)
-    scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=5, pady=5)
+    scan_button.grid(row=input_frame.config_button_row, column=1, columnspan=2, padx=5, pady=5)
 
-    travel_label = tk.Label(master=input_frame, text="Select Travel", font=label_font)
-    travel_label.grid(row=input_frame.encoder_row, column=0, padx=5, pady=5)
-
-    travel_menu = OptionMenu(input_frame, travel_var, "None")
-    travel_menu.grid(row=input_frame.encoder_row, column=1, padx=5, pady=5)
-
-    lbl_encoder = tk.Label(master=input_frame, text="Select Encoder", font=label_font)
-    lbl_encoder.grid(row=input_frame.encoder_row, column=2, padx=5, pady=5)
-
-    encoder_menu = tk.OptionMenu(input_frame, encoder_var, "None")
-    encoder_menu.grid(row=input_frame.encoder_row, column=3, padx=5, pady=5)
-    
     # Velocity Input
     lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1, font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=5, pady=5)
@@ -414,31 +359,31 @@ def UI():
     ent_other.grid(row=input_frame.cycles_row, column=3, padx=5, pady=5)
     
     # Stage Serial Number Input
-    lbl_job = tk.Label(master=input_frame, text="Job Number", width=25, height=1, font=label_font)
+    lbl_job = tk.Label(master=input_frame, text="Job Number", font=label_font)
     lbl_job.grid(row=input_frame.job_row, column=0, padx=5, pady=5)
     
     var_job = tk.StringVar(value=job_value)
-    ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=25)
+    ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=45)
     ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Operator Input
-    lbl_op = tk.Label(master=input_frame, text="Operator", width=25, height=1, font=label_font)
+    lbl_op = tk.Label(master=input_frame, text="Operator", font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=5, pady=5)
     
     var_op = tk.StringVar(value=op_value)
-    ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=25)
+    ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=45)
     ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Comments Input
-    lbl_comments = tk.Label(master=input_frame, text="Comments", width=25, height=1, font=label_font)
+    lbl_comments = tk.Label(master=input_frame, text="Comments", font=label_font)
     lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=5)
     
     var_comm = tk.StringVar(value=comm_value)
-    ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=25)
+    ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=45)
     ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=5)
     
     # Run and Open Plot Buttons
-    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='green', font=button_font)
+    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='lightgray', font=button_font)
     btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=5, pady=5)
     
 # =============================================================================
