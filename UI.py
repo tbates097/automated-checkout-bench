@@ -23,7 +23,9 @@ import json
 import ctypes
 import threading
 import requests
+import re
 from BallscrewSizer import App
+from secondary_UI import SecondaryUI
 from PyQt5.QtWidgets import QApplication
 
 
@@ -31,14 +33,19 @@ sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared"
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwvlJKB4IjiPW67djxLHxT62VxmEDe9_tBQtZk3OzXlqPuBjlAxwgJW3zQBwsYN29Df/exec"
-
-stage_dict_path = os.path.join(os.getcwd(), "stage_dict.json")
-with open(stage_dict_path, 'r') as f:
-    STAGE_DICT = json.load(f) 
+# Shared station state
+station_states = {
+    i: {"status": "free", "thread": None, "serial_number": None, "axis_name": f"ST{i:02}"} for i in range(1, 11)
+}
+station_lock = threading.Lock()
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
+
+secondary_ui = None
+test_axes = []
+specs_dict = {}
+absolute = False
 
 def save_user_inputs(data):
     """Save user inputs to a JSON file."""
@@ -52,7 +59,34 @@ def load_user_inputs():
             return json.load(f)
     return {}
 
+def allocate_stations(num_stations):
+    """Allocate the required number of free stations, or return None if not enough are available."""
+    with station_lock:
+        free_stations = [station for station, state in station_states.items() if state["status"] == "free"]
+        if len(free_stations) >= num_stations:
+            allocated = free_stations[:num_stations]
+            for station in allocated:
+                station_states[station]["status"] = "in-use"
+            return allocated
+        return None
 
+def release_stations(stations):
+    """Release multiple stations and mark them as free."""
+    with station_lock:
+        for station in stations:
+            station_states[station]["status"] = "free"
+            station_states[station]["thread"] = None
+            station_states[station]["serial_number"] = None
+
+def launch_secondary_ui():
+    """Launch the secondary UI in a new thread."""
+    def run_secondary_ui():
+        global secondary_ui
+        secondary_ui = SecondaryUI()
+        secondary_ui.run()
+
+    thread = threading.Thread(target=run_secondary_ui, daemon=True)
+    thread.start()
 
 def UI():
     global window
@@ -106,22 +140,23 @@ def UI():
     
     # Configure columns and rows
     input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=700 / 4, uniform='column')
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], weight=1, minsize=1)
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], weight=1, minsize=1)
 
     # Define row indices
     input_frame.h1_row = 0
     input_frame.ID_row = 1
     input_frame.config_button_row = 2
     input_frame.h2_row = 3
-    input_frame.speed_row = 4
-    input_frame.cycles_row = 5
-    input_frame.h3_row = 6
-    input_frame.job_row = 7
-    input_frame.op_row = 8
-    input_frame.comm_row = 9
-    input_frame.h4_row = 10
-    input_frame.run_row = 11
-    input_frame.out_row = 12
+    input_frame.num_axes_row = 4
+    input_frame.speed_row = 5
+    input_frame.cycles_row = 6
+    input_frame.h3_row = 7
+    input_frame.job_row = 8
+    input_frame.op_row = 9
+    input_frame.comm_row = 10
+    input_frame.h4_row = 11
+    input_frame.run_row = 12
+    input_frame.out_row = 13
 
     # Create horizontal separators
     ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h1_row, column=0, columnspan=4, sticky='nsew')
@@ -167,37 +202,56 @@ def UI():
     
     sys.stdout = text_logger
     
-    def start_test_thread():
-        """
-        Starts the test thread for running the test.
-        """
-        global test_thread, stage_type
-        test_thread = threading.Thread(target=run_test, daemon=True)
-        test_thread.start()
-        print(f'Stage Type: {stage_type}')
-        
-        # Disable the Run button during the test
-        btn_run.config(state=tk.DISABLED)
+    launch_secondary_ui()
     
-    def run_test():
-        """
-        Runs the test. Handles setup, execution, and resource cleanup.
-        """
-        # Save user inputs before closing
-        user_data = {
-            "speed": var_speed.get(),
-            "job": var_job.get(),
-            "operator": var_op.get(),
-            "comments": var_comm.get(),
-            "duty_cycle": var_duty_cycle.get()
-        }
-        save_user_inputs(user_data)
-        
-        try:
-            test()
-        finally:
-            gc.collect()
-            window.after(0, lambda: btn_run.config(state=tk.NORMAL))
+    def start_test_thread():
+        global test_axes
+        """Start a test thread for the required number of stations."""
+        num_stations = var_num_axes.get()
+        serial_number = var_job.get()
+        stations = allocate_stations(num_stations)
+        if stations is None:
+            print("Not enough free stations available.")
+            return
+
+        print(f"Allocating Stations {stations} for serial number {serial_number}")
+        test_axes = [station_states[station]["axis_name"] for station in stations]
+
+        def run_test():
+
+            try:
+                for station in stations:
+                    # Assign serial number to each station
+                    text_widget = secondary_ui.station_widgets[station]["txt_logs"]
+                    station_states[station]["serial_number"] = serial_number
+                    sys.stdout = TextLogger(text_widget)
+                    print(f"Running test on Station {station} with Serial Number: {serial_number}")
+                secondary_ui.update_station_status(stations, running=True, serial=serial_number)
+                user_data = {
+                            "speed": var_speed.get(),
+                            "job": var_job.get(),
+                            "operator": var_op.get(),
+                            "comments": var_comm.get(),
+                            "duty_cycle": var_duty_cycle.get()
+                        }
+                save_user_inputs(user_data)
+                
+                try:
+                    test()
+                finally:
+                    gc.collect()
+                    window.after(0, lambda: btn_run.config(state=tk.NORMAL))
+
+                print(f"Test completed on Stations {stations}")
+            finally:
+                release_stations(stations)
+                secondary_ui.update_station_status(stations, running=False, serial="")
+                print(f"Stations {stations} are now free.")
+
+        thread = threading.Thread(target=run_test, daemon=True)
+        for station in stations:
+            station_states[station]["thread"] = thread
+        thread.start()
     
     def reenable_run_button():
         """
@@ -217,6 +271,8 @@ def UI():
         
         sys.stdout = text_logger
         
+        stage_type = str(part_number.get())
+        num_axes = int(var_num_axes.get())
         speed = float(var_speed.get())
         job = str(var_job.get())
         op = str(var_op.get())
@@ -254,7 +310,7 @@ def UI():
         # Run the test
         strut_test = stage_checkout(
             stage_type, speed, BI_time, job, op, 
-            comm, txt_outStr, window, connected_axes, duty_cycle
+            comm, txt_outStr, window, num_axes, test_axes, duty_cycle, specs_dict, absolute
         )
         strut_test.test(controller, reenable_run_button)  
             
@@ -286,19 +342,22 @@ def UI():
     part_number = tk.StringVar(value="Scan Part Number Barcode")
 
     def on_scan():
+        global specs_dict
         file_path = r'C:\Users\tbates\Python\automated-checkout-bench\Temp Files\specs.txt'
         app = QApplication([])
         app_instance = App()
         stage_specs = app_instance.show_popup_config_dialog(config='stage', stage=part_entry.get())
 
-        specs_dict = {}
-
         with open(file_path, 'r') as file:
             for line in file:
-                if ':' in line:
-                    key, *value = line.strip().split(':')
-                    specs_dict[key] = value[0] if value else None
-        print(f'Stage Specs: {specs_dict}')
+                # Use regex to split only at the first ':' outside parentheses
+                match = re.match(r'([^:]+):(.*)', line.strip())
+                if match:
+                    key = match.group(1).strip()
+                    value = match.group(2).strip()
+                    specs_dict[key] = value if value else None
+
+        #print(f'Stage Specs: {specs_dict}')
 
     def time_def():
         global BI_state
@@ -309,6 +368,13 @@ def UI():
             ent_other["state"] = tk.NORMAL
             BI_state = 'other'
     
+    def abs_def():
+        global absolute
+        if abs_var.get() == "Yes":
+            absolute = True
+        else:
+            absolute = False
+
     def on_entry_focus(event):
         # Select all text in the entry field
         event.widget.select_range(0, tk.END)
@@ -329,7 +395,20 @@ def UI():
     scan_button = tk.Button(input_frame, text="Retrieve Stage Options", width=20, height=1, font=button_font, background="lightgray", command=on_scan)
     scan_button.grid(row=input_frame.config_button_row, column=1, columnspan=2, padx=5, pady=5)
 
-    # Velocity Input
+    lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", width=25, height=1, font=label_font)
+    lbl_num_axes.grid(row=input_frame.num_axes_row, column=0, padx=5, pady=5)
+    
+    var_num_axes = tk.IntVar(value="")
+    ent_num_axes = tk.Entry(master=input_frame, textvariable=var_num_axes, width=15)
+    ent_num_axes.grid(row=input_frame.num_axes_row, column=1, padx=5, pady=5)
+    
+    lbl_abs = tk.Label(master=input_frame, text="Absolute Encoder?", width=25, height=1, font=label_font)
+    lbl_abs.grid(row=input_frame.num_axes_row, column=2, padx=5, pady=5)
+    
+    abs_var = tk.StringVar(value="No")
+    abs_ent = tk.Radiobutton(master=input_frame, text="Yes", variable=abs_var, value="Yes", command=abs_def)
+    abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=5, pady=5)
+
     lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1, font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=5, pady=5)
     
@@ -417,7 +496,6 @@ def UI():
     # Bind the closing protocol
     window.protocol("WM_DELETE_WINDOW", on_closing)
 
-    
     window.mainloop()
     
 if __name__ == "__main__":

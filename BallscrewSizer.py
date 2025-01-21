@@ -545,9 +545,6 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                 #print(self.mtr_spec_vals)
         #return self.motorType
     def store_specs(self):
-        #print(self.spec_vals)
-        #print(self.spec_names)
-        #print(self.spec_units)
         if not getattr(sys, 'frozen', False):
             spec_path = dir_path + r"\Temp Files\\" + "specs.txt"  # saves in temp file dir
         else:
@@ -560,22 +557,8 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                 specs_file.write(str(self.spec_names[i])+":" + str(self.spec_vals[i])+" "+str(self.spec_units[i])+"\n")
             specs_file.close()
             
-            #disp_stage_spec_names=#copy.deepcopy(self.spec_names)
-            #disp_stage_spec_units=#copy.deepcopy(self.spec_units)
-            #disp_stage_spec_vals=#copy.deepcopy(self.spec_vals)
-            #PopupSpecDisplay.writeValues(disp_stage_spec_names,disp_motor_spec_units,disp_motor_spec_vals)
-            
-            
-        
     def getMotor(self):
-        #self.mtr_spec_names = []
-        #self.mtr_spec_vals = []
-        #self.mtr_spec_dtype = []
         self.mtr_rules = []
-        #print(self)
-        #print("Self.spec_names")
-        #print(self.spec_names)
-        #stage_spec_names=self.spec_names
         self.store_specs()
         #print("in getMotor")
         for i in range(len(self.spec_names)):
@@ -616,12 +599,10 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                 self.checkNotEqual()
                 self.checkIn()      
                 self.config_options.select()
-                #self.printTable("Input Name","Value")
                 if not config == "":
                     cfgs = config.split(',')
                     for cfg in cfgs:
                         val = cfg.split(':')
-                        #print("\"Input Name\" LIKE '" + val[0].strip() + "' AND Value LIKE " + val[1].strip())
                         self.config_options.setFilter("\"Input Name\" LIKE '" + val[0].strip() + "' AND Value LIKE " + val[1].strip())
                         self.config_options.select()
                         self.mtr_rules.append(self.config_options.record(0).value("Rule Id"))
@@ -632,17 +613,10 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                     self.checkNotEqual()
                     self.checkIn()      
                     self.checkActions(tblname,self.mtr_rules,"motor")
-        # for i in range(len(self.spec_names)):
-            #print("\nSpecName: "+ self.spec_names[i] + " Value: " + str(self.spec_vals[i]))
-        # for i in range(len(self.mtr_spec_names)):
-            #print("\nMotor SpecName: "+ self.mtr_spec_names[i] + " Value: " + str(self.mtr_spec_vals[i]))
         
         return self.motor,self.mtr_spec_names,self.mtr_spec_vals,self.mtr_spec_dtype
      
     def checkRules(self, count,tblname):
-       # print(count)
-        #print(self)
-        #print("stage " + tblname)
         self.setDBTable(self.inputs_app,tblname)
         #print(type(count))
         if type(count) is list:
@@ -670,43 +644,16 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                     else:
                         self.spec_vals.append(float(self.config_options.record(i).value("Value")))
                 else:
-                    self.spec_vals.append(self.config_options.record(i).value("Value"))
-            # if self.spec_name[i] == "URL":
-                # self.getStageType(self.spec_vals[i])
-        # for i in range(len(self.spec_names)):
-           # print("\nSpecName: "+ self.spec_names[i] + " Value: " + str(self.spec_vals[i]))        
+                    self.spec_vals.append(self.config_options.record(i).value("Value"))      
                 
         self.conditions_app = "_Conditions"
         self.setDBTable(self.conditions_app,tblname)
         self.checkEqual()
         self.checkNotEqual()
         self.checkIn()      
-        #print(self.ruleIDS)
         self.checkActions(tblname,self.ruleIDS,"stage")
         self.ruleIDS = []
         self.getMotor()
-        #print("Check Rules")
-        #print(self.mtr_spec_vals)
-        #print(self.spec_names)
-        #print(self.mtr_spec_names)
-        
-        #stage_spec_vals=self.spec_vals
-    
-        #stage_spec_names=self.spec_names
-        #stage_spec_units=self.spec_units
-    
-        #motor_spec_names=[]
-        #motor_spec_vals=[]
-        #motor_spec_units=[]
-        
-        
-        
-        #stage_spec_names=self.spec_names
-        # for i in range(len(self.spec_names)):
-           # print("\nSpecName: "+ self.spec_names[i] + " Value: " + str(self.spec_vals[i]))
-        # for i in range(len(self.mtr_spec_names)):
-           # print("\nMotor SpecName: "+ self.mtr_spec_names[i] + " Value: " + str(self.mtr_spec_vals[i]))
-        #print(self.mtr_spec_names)
         self.config_options.select()
         #return self.ruleIDS
     def makeConnections(self,count):    
@@ -882,6 +829,7 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                     if dialog.config_options.rowCount()!=0:
                         #print(str(dialog.config_options.record(0).value("Value")))
                         smart_string.append(str(dialog.config_options.record(0).value("Value")))
+                        dialog.smart_string = smart_string
 
         #print(smart_string)
         motor_smart_string=""
@@ -963,7 +911,14 @@ class PopupSpecDisplay(QtWidgets.QDialog, popup_spec_display):
                 read_file=open(spec_path, "r",encoding="utf-8")
                  # saves in temp file dir
 
+        # Write the smart string as the first line
+        with open(spec_path, "r", encoding="utf-8") as read_file:
+            file_content = read_file.readlines()
         
+        with open(spec_path, "w", encoding="utf-8") as write_file:
+            # Write the smart string followed by the original file content
+            write_file.write(dialog.smart_string + "\n")
+            write_file.writelines(file_content)
         
         specs=[dialog.Spec_01,dialog.Spec_02,dialog.Spec_03,dialog.Spec_04,dialog.Spec_05,dialog.Spec_06,dialog.Spec_07,dialog.Spec_08,dialog.Spec_09,dialog.Spec_10,\
         dialog.Spec_11,dialog.Spec_12,dialog.Spec_13,dialog.Spec_14,dialog.Spec_15,dialog.Spec_16,dialog.Spec_17,dialog.Spec_18,dialog.Spec_19,dialog.Spec_20,dialog.Spec_21,dialog.Spec_22,\
