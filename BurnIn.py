@@ -22,7 +22,7 @@ from Logger import TextLogger
 from DecodeFaults import decode_faults
 
 class burn_in():
-    def __init__(self, speed, burnin_time, text_widget, window, connected_axes, nominal_travel, fault_log, strut_info, duty_cycle, folder, stage_type, encoder, job, op, comments, log_file_path):
+    def __init__(self, speed, burnin_time, text_widget, window, connected_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, encoder, job, op, comments, log_file_path):
         #self.stage_type = stage_type
         self.speed = speed
         self.burnin_time = burnin_time
@@ -31,7 +31,7 @@ class burn_in():
         self.connected_axes = connected_axes
         self.nominal_travel = nominal_travel
         self.fault_log = fault_log
-        self.strut_info = strut_info
+        self.stage_info = stage_info
         self.duty_cycle = duty_cycle
         self.folder = folder
         self.stage_type = stage_type
@@ -138,7 +138,7 @@ class burn_in():
     def four_hour_burnin(self):
         current_date = datetime.date.today()
         current_time = datetime.datetime.now().time()
-        self.strut_info.info(f'Burn in started on {current_date} at {current_time}')
+        self.stage_info.info(f'Burn in started on {current_date} at {current_time}')
         # Variable to store file position of cycle counter log
         cycle_log_position = None
         
@@ -359,11 +359,11 @@ class burn_in():
 #         
 #         # Configure the second log file for limit information logging
 #         limit_log_file = os.path.join(job_log_dir, f'{self.job} Limit Info.log')
-#         self.strut_info = logging.getLogger('limit_info')
+#         self.stage_info = logging.getLogger('limit_info')
 #         limit_handler = logging.FileHandler(limit_log_file)
 #         limit_handler.setLevel(logging.INFO)
 #         limit_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 #         limit_handler.setFormatter(limit_formatter)
-#         self.strut_info.addHandler(limit_handler)
-#         self.strut_info.setLevel(logging.INFO)
+#         self.stage_info.addHandler(limit_handler)
+#         self.stage_info.setLevel(logging.INFO)
 # =============================================================================

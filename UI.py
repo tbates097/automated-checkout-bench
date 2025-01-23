@@ -15,7 +15,7 @@ Created on Tue Sep 24 13:09:21 2024
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, OptionMenu, font
+from tkinter import ttk, OptionMenu, font, messagebox
 import automation1 as a1
 from checkout_test import stage_checkout
 import gc
@@ -39,13 +39,14 @@ station_states = {
 }
 station_lock = threading.Lock()
 
-# JSON file path to store user inputs
-USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
-
 secondary_ui = None
 test_axes = []
 specs_dict = {}
 absolute = False
+stations = []
+
+# JSON file path to store user inputs
+USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
 
 def save_user_inputs(data):
     """Save user inputs to a JSON file."""
@@ -205,8 +206,8 @@ def UI():
     launch_secondary_ui()
     
     def start_test_thread():
-        global test_axes
         """Start a test thread for the required number of stations."""
+        global test_axes, stations
         num_stations = var_num_axes.get()
         serial_number = var_job.get()
         stations = allocate_stations(num_stations)
@@ -215,7 +216,7 @@ def UI():
             return
 
         print(f"Allocating Stations {stations} for serial number {serial_number}")
-        test_axes = [station_states[station]["axis_name"] for station in stations]
+        test_axes = [str(station_states[station]["axis_name"]) for station in stations]
 
         def run_test():
 
@@ -225,7 +226,7 @@ def UI():
                     text_widget = secondary_ui.station_widgets[station]["txt_logs"]
                     station_states[station]["serial_number"] = serial_number
                     sys.stdout = TextLogger(text_widget)
-                    print(f"Running test on Station {station} with Serial Number: {serial_number}")
+                    #print(f"Running test on Station {station} with Serial Number: {serial_number}")
                 secondary_ui.update_station_status(stations, running=True, serial=serial_number)
                 user_data = {
                             "speed": var_speed.get(),
@@ -283,36 +284,144 @@ def UI():
         else:
             BI_time = int(var_time.get())
         
-        global controller, strut_test
+        global controller, stage_test
         
-        controller = a1.Controller.connect()
-        controller.start()
+        #controller = a1.Controller.connect()
+        #controller.start()
         
-        connected_axes = {}
+        #connected_axes = {}
         
-        for axis_index in range(0,11):
+        #for axis_index in range(0,11):
 
             #try:            
             # Create status item configuration object
-            status_item_configuration = a1.StatusItemConfiguration()
+            #status_item_configuration = a1.StatusItemConfiguration()
                         
             # Add this axis status word to object
-            status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+            #status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
             
             # Get axis status word from controller
-            result = controller.runtime.status.get_status_items(status_item_configuration)
-            axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+            #result = controller.runtime.status.get_status_items(status_item_configuration)
+            #axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
             
             # Check NotVirtual bit of axis status word
-            if (axis_status & 1 << 13) > 0:
-                connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
-        
+            #if (axis_status & 1 << 13) > 0:
+                #connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+        def controller_def():
+            ver = tk.Toplevel(input_frame)
+            ver.title('Connection Type')
+            ver.configure(bg='white')
+
+            custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
+
+            label = tk.Label(ver, text="Are you trying to connect via USB?", bg='white', font=custom_font)
+            label.grid(row=0, column=0, columnspan=2, padx=10, pady=5)
+
+            def on_yes():
+                ver.result = 'yes'
+                ver.destroy()
+
+            def on_no():
+                ver.result = 'No'
+                ver.destroy()
+
+            button_ok = tk.Button(ver, text="Yes", width=10, height=2, command=on_yes)
+            button_ok.grid(row=4, column=0, padx=10, pady=10)
+
+            button_cancel = tk.Button(ver, text="No", width=10, height=2, command=on_no)
+            button_cancel.grid(row=4, column=1, padx=10, pady=10)
+
+            ver.resizable(False, False)
+
+            ver.update_idletasks()  # Ensure that the window sizes correctly
+
+            screen_width = ver.winfo_screenwidth()
+            screen_height = ver.winfo_screenheight()
+
+            ver_width = ver.winfo_reqwidth()
+            ver_height = ver.winfo_reqheight()
+
+            x_cordinate = int((screen_width / 2) - (ver_width / 2))
+            y_cordinate = int((screen_height / 2) - (ver_height / 2))
+
+            ver.geometry("{}x{}+{}+{}".format(ver_width, ver_height, x_cordinate, y_cordinate))
+            ver.focus_set()
+            ver.result = None
+            ver.wait_window()
+
+            return ver.result
+
+        try:
+            controller = a1.Controller.connect()
+            controller.start()
+        except:
+            connection_type = controller_def()
+            if connection_type == 'yes':
+                try:
+                    controller = a1.Controller.connect_usb()
+                    controller.start()
+                except:
+                    messagebox.showerror('Connection Error', 'Check connections and try again')
+            else:
+                messagebox.showerror('Update Software', 'Update Hyperwire firmware and try again')
+        connected_axes = {}
+        non_virtual_axes = []
+
+        number_of_axes = controller.runtime.parameters.axes.count
+
+        if number_of_axes <= 12:
+            for axis_index in range(0,11):
+                status_item_configuration = a1.StatusItemConfiguration()
+                status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                
+                result = controller.runtime.status.get_status_items(status_item_configuration)
+                axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                if (axis_status & 1 << 13) > 0:
+                    connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+            for key, value in connected_axes.items():
+                non_virtual_axes.append(key)
+        else:
+            for axis_index in range(0,32):
+                status_item_configuration = a1.StatusItemConfiguration()
+                status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                result = controller.runtime.status.get_status_items(status_item_configuration)
+                axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                if (axis_status & 1 << 13) > 0:
+                    connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+            for key, value in connected_axes.items():
+                print(f'Key: {key}')
+                print(f'Value: {value}')
+                non_virtual_axes.append(key)
+        if len(non_virtual_axes) == 0:
+            #try:
+            controller = a1.Controller.connect_usb()
+            number_of_axes = controller.runtime.parameters.axes.count
+            if number_of_axes <= 12:
+                for axis_index in range(0,11):
+                    status_item_configuration = a1.StatusItemConfiguration()
+                    status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                    
+                    result = controller.runtime.status.get_status_items(status_item_configuration)
+                    axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                    if (axis_status & 1 << 13) > 0:
+                        connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+                for key, value in connected_axes.items():
+                    non_virtual_axes.append(key)
+            else:
+                for axis_index in range(0,32):
+                    status_item_configuration = a1.StatusItemConfiguration()
+                    status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                    result = controller.runtime.status.get_status_items(status_item_configuration)
+                    axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                    if (axis_status & 1 << 13) > 0:
+                        connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+       
         # Run the test
-        strut_test = stage_checkout(
+        stage_test = stage_checkout(
             stage_type, speed, BI_time, job, op, 
-            comm, txt_outStr, window, num_axes, test_axes, duty_cycle, specs_dict, absolute
+            comm, secondary_ui, window, num_axes, test_axes, duty_cycle, specs_dict, absolute, stations
         )
-        strut_test.test(controller, reenable_run_button)  
+        stage_test.test(controller, reenable_run_button)  
             
         cleanup_resources()
         print('Cleaning Up')
@@ -347,16 +456,17 @@ def UI():
         app = QApplication([])
         app_instance = App()
         stage_specs = app_instance.show_popup_config_dialog(config='stage', stage=part_entry.get())
-
-        with open(file_path, 'r') as file:
-            for line in file:
-                # Use regex to split only at the first ':' outside parentheses
-                match = re.match(r'([^:]+):(.*)', line.strip())
-                if match:
-                    key = match.group(1).strip()
-                    value = match.group(2).strip()
-                    specs_dict[key] = value if value else None
-
+        try:
+            with open(file_path, 'r') as file:
+                for line in file:
+                    # Use regex to split only at the first ':' outside parentheses
+                    match = re.match(r'([^:]+):(.*)', line.strip())
+                    if match:
+                        key = match.group(1).strip()
+                        value = match.group(2).strip()
+                        specs_dict[key] = value if value else None
+        except FileNotFoundError:
+            print("Stage specs file not found. Please re-configure stage.")
         #print(f'Stage Specs: {specs_dict}')
 
     def time_def():
