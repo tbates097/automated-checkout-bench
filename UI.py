@@ -419,7 +419,9 @@ def UI():
         # Run the test
         stage_test = stage_checkout(
             stage_type, speed, BI_time, job, op, 
-            comm, secondary_ui, window, num_axes, test_axes, duty_cycle, specs_dict, absolute, stations
+            comm, secondary_ui, window, num_axes, 
+            test_axes, duty_cycle, specs_dict, 
+            absolute, stations
         )
         stage_test.test(controller, reenable_run_button)  
             

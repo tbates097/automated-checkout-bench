@@ -185,7 +185,7 @@ class stage_checkout():
         self.zero_home_offset = 0
         self.max_current_clamp = 10
         self.low_current_clamp = 3.5
-        self.nominal_travel = self.specs_dict.get('NominalTravel').split()[0]
+        self.nominal_travel = float(self.specs_dict.get('NominalTravel').split()[0])
 
         # Set the home offset and fault mask based on the encoder type
         if self.absolute:
@@ -748,7 +748,7 @@ class stage_checkout():
         Calculate the absolute feedback offset for each axis by averaging the CW and CCW hardstop positions.
         Set the absolute feedback offset for each axis using the calculated midpoints.
         """
-        self.station_print('Calculating Absolute Offset')
+        self.station_print('Calculating Offset')
         # Initialize a new dictionary to store midpoints
         self.midpoints = {}
         
@@ -767,38 +767,36 @@ class stage_checkout():
                     midpoint = (midpoint * cpu) * -1
                 else:
                     midpoint = midpoint * cpu
-
+                self.midpoints[axis] = midpoint
                 self.stage_info.info(f'The absolute feedback offset for {axis} is {midpoint}')
-
+                self.data[f"Axis: {axis}"]["Absolute Position Offset"] = midpoint
             # Optional: Print or log the midpoints to verify
             #print("Midpoints for each axis:", self.midpoints)
 
             #for axis in self.test_axes:
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
                 # Following 4 lines along with reset command physically change the values in the active MCD
-                configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = self.midpoints[axis]
+                configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = midpoint
                 configured_parameters.axes[axis].protection.maxcurrentclamp.value = self.max_current_clamp
                 self.controller.configuration.parameters.set_configuration(configured_parameters)
-                
-                self.data[f"Axis: {axis}"]["Absolute Position Offset"] = self.midpoints[axis]
         else:
             for axis, limits in self.limit_pos.items():
-                for limit_type, strut_limit_pos in limits.items():
-                    if limit_type == 'cw':
-                        cw_pos = strut_limit_pos
-                    elif limit_type == 'ccw':
-                        ccw_pos = strut_limit_pos
+                for limit_type, stage_limit_pos in limits.items():
+                    if limit_type == 'Cw':
+                        cw_pos = stage_limit_pos
+                    elif limit_type == 'Ccw':
+                        ccw_pos = stage_limit_pos
 
                 # Calculate the midpoint
                 midpoint = (ccw_pos + cw_pos) / 2
-
+                self.midpoints[axis] = midpoint
+                self.data[f"Axis: {axis}"]["Home Offset"] = midpoint
+                
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
                 # Following 4 lines along with reset command physically change the values in the active MCD
-                configured_parameters.axes[axis].homing.homeoffset.value = self.midpoints[axis]
+                configured_parameters.axes[axis].homing.homeoffset.value = midpoint
                 self.controller.configuration.parameters.set_configuration(configured_parameters)
 
-                self.data[f"Axis: {axis}"]["Home Offset"] = self.midpoints[axis]
-                
         self.controller.reset()
         time.sleep(10)
 
@@ -822,30 +820,31 @@ class stage_checkout():
         for axis in self.test_axes:
             # Retrieve current configuration parameters
             configured_parameters = self.controller.configuration.parameters.get_configuration()
-            configured_parameters.axes[axis].protection.softwarelimithigh.value = (((self.specs_dict.get('NominalTravel')) / 2) + 0.1)
-            configured_parameters.axes[axis].protection.softwarelimitlow.value = ((((self.specs_dict.get('NominalTravel')) / 2) + 0.1) * -1)
-            
+            configured_parameters.axes[axis].protection.softwarelimithigh.value = (((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1))
+            configured_parameters.axes[axis].protection.softwarelimitlow.value = ((((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1) * -1))
+
             # Apply the new configuration
             self.controller.configuration.parameters.set_configuration(configured_parameters)
         
         # Set additional parameters and reset the controller
         for axis in self.test_axes:
-            self.params(self.midpoints[axis], self.max_current_clamp, limit=['electrical on', 'software on'])
+            self.params(home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
         self.controller.reset()
         time.sleep(10)
         
         # Enable the connected axes
         self.controller.runtime.commands.motion.enable(self.test_axes)
         
+        if self.absolute:
         # Initialize burn-in process
-        BI = burn_in(self.speed, self.burnin_time, self.text_widget, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.limit_log_file)
-        BI.initialize_burnin(self.controller)
+            BI = burn_in(self.speed, self.burnin_time, self.secondary_ui, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.specs_dict, self.stations, self.stage_log_file)
+            BI.initialize_burnin(self.controller)
         
-        populate_sheet = Sheets(self.job, self.data)
-        populate_sheet.populate_sheet()
-
-        # Home the struts
-        self.home_stages()
+            populate_sheet = Sheets(self.job, self.data)
+            populate_sheet.populate_sheet()
+        else:
+            # Home the struts
+            self.home_stages()
             
     def home_stages(self):
         """
@@ -945,10 +944,18 @@ class stage_checkout():
         def cw_check():
             limit = 'Cw'
             self.enable(test)
+            for axis in self.test_axes:
+                try:
+                    self.controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
+                    time.sleep(2)
+                    self.controller.runtime.commands.motion.waitformotiondone([axis])
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults()
+                    if faults_per_axis:
+                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)
+                        time.sleep(2)
             time.sleep(2)
-            self.move_to_pos(test, test_time, limit)
-            time.sleep(2)
-            
+
             # Explicitly check for faults after moveabsolute
             faults_per_axis = self.check_for_faults()  # Check for faults
             if faults_per_axis:
@@ -969,7 +976,16 @@ class stage_checkout():
             limit = 'Ccw'
             self.enable(test)
             time.sleep(2)
-            self.move_to_pos(test, test_time, limit)
+            for axis in self.test_axes:
+                try:
+                    self.controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+                    time.sleep(2)
+                    self.controller.runtime.commands.motion.waitformotiondone([axis])
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults()
+                    if faults_per_axis:
+                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)
+                        time.sleep(2)
             time.sleep(2)
             
             # Explicitly check for faults after moveabsolute
@@ -1005,10 +1021,13 @@ class stage_checkout():
         
         # Calculate the limit travel and home the struts
         self.calculate_limit_travel()
-
+        time.sleep(2)
+        self.calculate_home_offset()
+        time.sleep(2)
         self.marker_to_limit()
-        
-        BI = burn_in(self.speed, self.burnin_time, self.text_widget, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.limit_log_file)
+        time.sleep(2)
+
+        BI = burn_in(self.speed, self.burnin_time, self.secondary_ui, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.specs_dict, self.stations, self.stage_log_file)
         BI.initialize_burnin(self.controller)
         
         populate_sheet = Sheets(self.job, self.data)
@@ -1019,6 +1038,7 @@ class stage_checkout():
         self.home_stages()
 
         self.station_print("All tests completed.")
+    
     def marker_to_limit(self):
         """
         Move the connected axes to the marker position and log the position.
@@ -1081,66 +1101,7 @@ class stage_checkout():
         # Enable connected axes
         attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.test_axes))
         time.sleep(1)
-        
-    def move_to_pos(self, test, test_time, limit):
-        """
-        Move the connected axes to a specified position based on the given limit.
-
-        Parameters:
-            test (str): The name of the test being performed.
-            test_time (float): The time to wait after initiating the move.
-            limit (str): The direction of the limit ('Ccw' or 'Cw').
-
-        This function attempts to move the connected axes to either the
-        counter-clockwise (Ccw) or clockwise (Cw) end of nominal travel.
-        It handles any faults that occur during the operation and retries if necessary.
-        """
-        def attempt_operation(operation):
-            """
-            Helper function to handle and retry failed operations due to axis faults.
-            """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.')
-                    break
-
-        if limit == 'Ccw':
-            # Move to CCW end of nominal travel for connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(
-                self.test_axes, self.list_commands_ccw_pos, self.list_velocity))
-            time.sleep(test_time)
-            try:
-                self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
-            except ControllerAxisFaultException:
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-        else:
-            # Move to CW end of nominal travel for connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(
-                self.test_axes, self.list_commands_cw_pos, self.list_velocity))
-            time.sleep(test_time)
-            try:
-                self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
-            except ControllerAxisFaultException:
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-
-        time.sleep(1)  # Ensure all operations have completed before proceeding
-        
+    
     def move_into_limit(self, test, limit):
         """
         Move the connected axes to a specified limit (CCW or CW) and log the position.
@@ -1153,27 +1114,26 @@ class stage_checkout():
             """
             Helper function to handle and retry failed operations due to axis faults.
             """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.')
-                    break
-                
+            try:
+                operation()  # Attempt the operation
+            except (ControllerAxisFaultException, ControllerOperationException):
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                time.sleep(2)
+
+        test_time = 2
+        n = int(self.sample_rate * test_time)
+        freq = a1.DataCollectionFrequency.Frequency1kHz
+
         # For each axis, move to CCW limit and log position
         for axis in self.test_axes:
+            data_config = self.data_config(n, freq, axis)
             attempt_operation(lambda: self.controller.runtime.commands.motion.enable(axis))
             time.sleep(1)
+            self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
             if limit == 'Ccw':
-                attempt_operation(lambda: self.controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1))
+                self.controller.runtime.commands.motion.movefreerun([axis], [-1])
                 time.sleep(3)
                 try:
                     self.controller.runtime.commands.motion.waitformotiondone(axis)
@@ -1181,9 +1141,10 @@ class stage_checkout():
                     # Explicitly check for faults after moveabsolute
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
-                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
+                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        time.sleep(2) 
             else:
-                attempt_operation(lambda: self.controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1))
+                self.controller.runtime.commands.motion.movefreerun([axis], [1])
                 time.sleep(3)
                 try:
                     self.controller.runtime.commands.motion.waitformotiondone(axis)
@@ -1191,15 +1152,16 @@ class stage_checkout():
                     # Explicitly check for faults after moveabsolute
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
-                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-            
+                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        time.sleep(2) 
+            results = self.controller.runtime.data_collection.get_results(data_config, n)
+            self.populate(axis, results)    
             if test != 'marker to limit':
-                # Ensure only active axes are logged
-                if axis in self.test_axes:
-                    self.log_limit_pos(axis, limit)
+                self.log_limit_pos(axis, limit, results)
             time.sleep(2)
 
-        time.sleep(1)
+        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+        time.sleep(2) 
     
     def move_into_hardstop(self, test, limit):
         """
@@ -1216,21 +1178,16 @@ class stage_checkout():
 
             The operation is retried after faults are handled.
             """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.')
-                    break
-        test_time = 1.75
+            try:
+                operation()  # Attempt the operation
+            except (ControllerAxisFaultException, ControllerOperationException):
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                time.sleep(2)
+            
+        move_time = float(self.specs_dict.get('HardToHard-FirstContact').split()[0]) - float(self.specs_dict.get('LimitToLimitTravel').split()[0])
+        test_time = ((move_time / 2) / 0.25) + 30
         n = int(self.sample_rate * test_time)
         freq = a1.DataCollectionFrequency.Frequency1kHz
         
@@ -1245,10 +1202,11 @@ class stage_checkout():
             time.sleep(2)
             attempt_operation(lambda: self.controller.runtime.commands.motion.enable(axis))
             time.sleep(1)
-            
+
+            self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
+
             if limit == 'Ccw':
-                self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [-0.25]))
+                self.controller.runtime.commands.motion.movefreerun([axis], [-0.25])
                 
                 time.sleep(3)
                 
@@ -1259,14 +1217,10 @@ class stage_checkout():
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
                         self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        time.sleep(2)   
-                # Ensure only active axes are logged
-                results = self.controller.runtime.data_collection.get_results(data_config, n)
-                if axis in self.test_axes:
-                    self.log_hardstop_pos(axis, limit, results)
+                        time.sleep(2)
+                time.sleep(10)   
             else:
-                self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [0.25]))
+                self.controller.runtime.commands.motion.movefreerun([axis], [0.25])
                 time.sleep(3)
                 
                 try:
@@ -1276,14 +1230,16 @@ class stage_checkout():
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
                         self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        time.sleep(2)   
-                results = self.controller.runtime.data_collection.get_results(data_config, n)
-                # Ensure only active axes are logged
-                if axis in self.test_axes:
-                    self.log_hardstop_pos(axis, limit, results)
+                        time.sleep(2)  
+                time.sleep(10) 
+            results = self.controller.runtime.data_collection.get_results(data_config, n)
+            self.populate(axis, results)
+            self.log_hardstop_pos(axis, limit, results)
                 
             time.sleep(2)
-        time.sleep(1)   
+            
+        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+        time.sleep(2)   
     
     def move_out_of_hardstop(self, limit):
         """
@@ -1296,7 +1252,7 @@ class stage_checkout():
             # Move out of the hardstop in the Ccw direction
             for axis in self.test_axes:
                 self.controller.runtime.commands.motion.enable([axis])
-                self.controller.runtime.commands.motion.moveincremental([axis], [((float(self.specs_dict.get('NominalTravel').split()[0])) / 2)], [1])
+                self.controller.runtime.commands.motion.moveincremental([axis], [((float(self.specs_dict.get('NominalTravel').split()[0])) / 2)], [10])
                 self.controller.runtime.commands.motion.waitformotiondone([axis])
                 
                 # Explicitly check for faults after moveabsolute
@@ -1316,7 +1272,7 @@ class stage_checkout():
             # Move out of the hardstop in the Cw direction
             for axis in self.test_axes:
                 self.controller.runtime.commands.motion.enable([axis])
-                self.controller.runtime.commands.motion.moveincremental([axis], [(((float(self.specs_dict.get('NominalTravel').split()[0])) / 2) * -1)], [1])
+                self.controller.runtime.commands.motion.moveincremental([axis], [(((float(self.specs_dict.get('NominalTravel').split()[0])) / 2) * -1)], [10])
                 self.controller.runtime.commands.motion.waitformotiondone([axis])
                 
                 # Explicitly check for faults after moveabsolute
@@ -1350,70 +1306,107 @@ class stage_checkout():
             limit (str): The direction of the limit ('Ccw' or 'Cw').
             results (a1.DataCollectionResults): The results of the data collection run.
         """
-        axis = str(axis)
-        
         position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
-        current_feedback = results.axis.get(a1.AxisDataSignal.CurrentFeedback, axis).points
-        print(current_feedback)
-        # Ensure all values in current_feedback are positive
-        current_feedback = [abs(value) for value in current_feedback]
 
-        position_at_clamp = None  # Initialize variable to store the position feedback
+        # Combine signals into a dictionary for logging
+        signals = {
+            "Position Error Bit Toggled": self.pos_error_fault,
+            "Over Current Bit Toggled": self.over_current_fault,
+            "Raw Position Feedback": position_feedback,
+        }
 
-        for i, value in enumerate(current_feedback):
-            if value >= self.low_current_clamp:
-                # Record the corresponding position_feedback value
-                position_at_clamp = position_feedback[i]
-                break
+        # Log signals to a text file
+        log_file_path = os.path.join("logs", f"signal_data_log-{axis}-{limit}-Hardstop.txt")
+        self.log_signals_to_file(log_file_path, signals)
 
-        # Retrieve the primary feedback points for the specified axis
-        #self.pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
-        # Configuration to retrieve items from the A1 controller
-        #status_item_configuration = a1.StatusItemConfiguration()
-        #status_item_configuration.axis.add(a1.AxisDataSignal.PositionFeedback, axis)
-        
-        # Retrieve position feedback from the controller
-        #results = self.controller.runtime.status.get_status_items(status_item_configuration)
-        
-        # Retrieve position feedback and round to 4 decimal places
-        #stage_hardstop_pos = round(results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).value, 4)
-        
+        end_position = None  # Initialize variable to store the position feedback
+
+        # Iterate through velocity_command and track zero crossings
+        for i, bit in enumerate(self.pos_error_fault):
+            if bit == 1:
+                end_position = position_feedback[i]
+                break  # Stop searching after finding the second zero crossing
+        if end_position == None:
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.over_current_fault):
+                if bit == 1:
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+        if end_position == None:
+            if limit == 'Ccw':
+                absolute_feedback = [abs(value) for value in position_feedback]
+                max_feedback = max(absolute_feedback)
+                end_position = (max_feedback * -1)
+            else:
+                end_position = max(position_feedback)
+            
         # Use a nested dictionary to store both 'Ccw' and 'Cw' positions
         if axis not in self.hardstop_pos:
             self.hardstop_pos[axis] = {}  # Create a new dictionary for each axis
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
-        self.hardstop_pos[axis][limit] = position_at_clamp
+        self.hardstop_pos[axis][limit] = end_position
         
         # Log the position of the current limit
-        self.stage_info.info(f'{limit} hardstop Position for {axis}: {position_at_clamp}')
+        self.stage_info.info(f'{limit} hardstop Position for {axis}: {end_position}')
         
-    def log_limit_pos(self, axis, limit):
+    def log_limit_pos(self, axis, limit, results):
         """
         Logs the current position of the given axis after it has reached its limit in the specified direction.
 
         Parameters:
             axis (int): The axis number to log the limit position for.
             limit (str): The direction of the limit ('Ccw' or 'Cw').
+            results (a1.DataCollectionResults): The results of the data collection run.
         """
-        # Configuration to retrieve items from the A1 controller
-        status_item_configuration = a1.StatusItemConfiguration()
-        status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, axis)
-        # Retrieve position feedback from the controller
-        results = self.controller.runtime.status.get_status_items(status_item_configuration)
+        position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
 
-        # Retrieve position feedback and round to 4 decimal places
-        stage_limit_pos = round(results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).value, 4)
-        
+        if limit == 'Ccw':
+            # Combine signals into a dictionary for logging
+            signals = {
+                "Fault Bit Toggled": self.ccw_fault,
+                "Position Feedback": position_feedback,
+            }
+
+            # Log signals to a text file
+            log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Ccw-Limit.txt")
+            self.log_signals_to_file(log_file_path, signals)
+
+            end_position = None  # Initialize variable to store the position feedback
+
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.ccw_fault):
+                if bit == 1:  # Check if velocity_command is zero
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+        else:
+            # Combine signals into a dictionary for logging
+            signals = {
+                "Fault Bit Toggled": self.cw_fault,
+                "Position Feedback": position_feedback,
+            }
+
+            # Log signals to a text file
+            log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Cw-Limit.txt")
+            self.log_signals_to_file(log_file_path, signals)
+
+            end_position = None  # Initialize variable to store the position feedback
+
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.cw_fault):
+                if bit == 1:  # Check if velocity_command is zero
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+
         # Use a nested dictionary to store both 'Ccw' and 'Cw' positions
         if axis not in self.limit_pos:
             self.limit_pos[axis] = {}  # Create a new dictionary for each axis
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
-        self.limit_pos[axis][limit] = stage_limit_pos
+        self.limit_pos[axis][limit] = end_position
         
         # Log the position of the current limit
-        self.stage_info.info(f'{limit} limit Position for {axis}: {stage_limit_pos}')
+        self.stage_info.info(f'{limit} limit Position for {axis}: {end_position}')
             
     def calculate_limit_travel(self):
         """
@@ -1423,8 +1416,6 @@ class stage_checkout():
         """
         limit_fail_list  = []
         hardstop_fail_list = []
-        print(f'Limit Position: {self.limit_pos}')
-        print(f'Hardstop Position: {self.hardstop_pos}')
         # Calculate the distance between CW and CCW limits for each axis
         for axis in self.test_axes:
             station_id = self.axis_to_station_map.get(axis)
@@ -1439,7 +1430,7 @@ class stage_checkout():
                 ccw_hardstop_position = self.hardstop_pos[axis]['Ccw']
                 cw_hardstop_position = self.hardstop_pos[axis]['Cw']
                 hardstop_distance = abs(cw_hardstop_position - ccw_hardstop_position)
-                hardstop_distance = round(limit_distance, 4)
+                hardstop_distance = round(hardstop_distance, 4)
             else:
                 self.station_print(f"Axis {axis} is missing one or more limit positions.", station_id=station_id)
 
@@ -1453,7 +1444,7 @@ class stage_checkout():
                 limit_fail_list.append(axis)
             else:
                 self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
-            if hardstop_distance < limit_spec:
+            if hardstop_distance < hardstop_spec:
                 #hardstop_failing = (hardstop_spec - hardstop_distance)
                 self.station_print(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}', station_id=station_id)
                 self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(hardstop_distance, 4)}')
@@ -1486,10 +1477,12 @@ class stage_checkout():
 
         # Add items to collect data on the specified axis
         data_config.axis.add(a1.AxisDataSignal.DriveStatus, axis)
+        data_config.axis.add(a1.AxisDataSignal.AxisFault, axis)
         data_config.axis.add(a1.AxisDataSignal.PrimaryFeedback, axis)
         data_config.axis.add(a1.AxisDataSignal.PositionFeedback, axis)
         data_config.axis.add(a1.AxisDataSignal.CurrentCommand, axis)
         data_config.axis.add(a1.AxisDataSignal.CurrentFeedback, axis)
+        data_config.axis.add(a1.AxisDataSignal.VelocityCommand, axis)
 
         return data_config
     
@@ -1506,10 +1499,14 @@ class stage_checkout():
         self.hall_b = []
         self.hall_c = []
         self.pri_fbk = []
+        self.ccw_fault = []
+        self.cw_fault = []
+        self.pos_error_fault = []
+        self.over_current_fault = []
 
         # Retrieve the drive status points for the specified axis
         halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
-
+        faults = results.axis.get(a1.AxisDataSignal.AxisFault, axis).points
         # Retrieve the primary feedback points for the specified axis
         self.pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
 
@@ -1518,6 +1515,11 @@ class stage_checkout():
             self.hall_a.append(1 if ((int(x) & a1.DriveStatus.HallAInput.value) > 0) else 0)
             self.hall_b.append(1 if ((int(x) & a1.DriveStatus.HallBInput.value) > 0) else 0)
             self.hall_c.append(1 if ((int(x) & a1.DriveStatus.HallCInput.value) > 0) else 0)
+        for x in faults:
+            self.ccw_fault.append(1 if ((int(x) & a1.AxisFault.CcwEndOfTravelLimitFault.value) > 0) else 0)
+            self.cw_fault.append(1 if ((int(x) & a1.AxisFault.CwEndOfTravelLimitFault.value) > 0) else 0)
+            self.pos_error_fault.append(1 if ((int(x) & a1.AxisFault.PositionErrorFault.value) > 0) else 0)
+            self.over_current_fault.append(1 if ((int(x) & a1.AxisFault.OverCurrentFault.value) > 0) else 0)
     def init_logger(self):
         """
         Initialize the logging system for the strut checkout station.
@@ -1544,11 +1546,36 @@ class stage_checkout():
         self.fault_log.setLevel(logging.INFO)
 
         # Configure the second log file for limit information logging
-        stage_log_file = os.path.join(self.job_log_dir, f'{self.job} Stage Info.log')
+        self.stage_log_file = os.path.join(self.job_log_dir, f'{self.job} Stage Info.log')
         self.stage_info = logging.getLogger('stage_info')
-        stage_handler = logging.FileHandler(stage_log_file)
+        stage_handler = logging.FileHandler(self.stage_log_file)
         stage_handler.setLevel(logging.INFO)
         stage_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         stage_handler.setFormatter(stage_formatter)
         self.stage_info.addHandler(stage_handler)
         self.stage_info.setLevel(logging.INFO)
+
+    def log_signals_to_file(self, log_file_path, signals):
+        """
+        Log all collected signals to a text file.
+
+        Args:
+            log_file_path (str): Path to the log file.
+            signals (dict): Dictionary of signal names and their corresponding data.
+        """
+        try:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
+            # Open the file in write mode
+            with open(log_file_path, 'w') as log_file:
+                log_file.write("Signal Data Log\n")
+                log_file.write("=" * 40 + "\n\n")
+                
+                for signal_name, signal_data in signals.items():
+                    log_file.write(f"Signal: {signal_name}\n")
+                    log_file.write(f"Data Points: {len(signal_data)}\n")
+                    log_file.write(f"Values: {signal_data}\n")
+                    log_file.write("\n" + "-" * 40 + "\n")
+        except Exception as e:
+            print(f"Error logging signals: {e}")

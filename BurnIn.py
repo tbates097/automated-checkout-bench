@@ -22,39 +22,84 @@ from Logger import TextLogger
 from DecodeFaults import decode_faults
 
 class burn_in():
-    def __init__(self, speed, burnin_time, text_widget, window, connected_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, encoder, job, op, comments, log_file_path):
+    def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file):
         #self.stage_type = stage_type
         self.speed = speed
         self.burnin_time = burnin_time
-        self.text_widget = text_widget
+        self.secondary_ui = secondary_ui
         self.window = window
-        self.connected_axes = connected_axes
+        self.test_axes = test_axes
         self.nominal_travel = nominal_travel
         self.fault_log = fault_log
         self.stage_info = stage_info
         self.duty_cycle = duty_cycle
         self.folder = folder
         self.stage_type = stage_type
-        self.encoder = encoder
+        self.absolute = absolute
         self.job = job
         self.op = op
         self.comments = comments
-        self.log_file_path = log_file_path
+        self.specs_dict = specs_dict
+        self.stations = stations
+        self.job_log_dir = job_log_dir
+        self.stage_log_file = stage_log_file
         
         self.sample_rate = 1000
         
-        self.text_logger = TextLogger(text_widget)
-        sys.stdout = self.text_logger
+        self.station_loggers = {}
+        for station_id in self.stations:
+            station_widget = self.secondary_ui.station_widgets.get(station_id)
+            if station_widget:
+                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
+
+        # Define a mapping between axis names and station IDs
+        self.axis_to_station_map = {
+            'ST01': 1,
+            'ST02': 2,
+            'ST03': 3,
+            'ST04': 4,
+            'ST05': 5,
+            'ST06': 6,
+            'ST07': 7,
+            'ST08': 8,
+            'ST09': 9,
+            'ST10': 10
+            # Add more mappings as needed
+        }
 
         self.window = tk.Tk()
         self.window.withdraw()
-    
+
+    def station_print(self, message, station_id=None):
+        """
+        Print a message to a specific station's text_widget or all stations.
+
+        Parameters:
+            message (str): The message to display.
+            station_id (int or None): The ID of the station to print to.
+                                      If None, print to all allocated stations.
+        """
+        #print(f'Station ID: {station_id}')
+        if station_id is None:  # Print to all stations
+            for sid, logger in self.station_loggers.items():
+                logger.write(message + "\n")
+        elif station_id in self.station_loggers:  # Print to a specific station
+            self.station_loggers[station_id].write(message + "\n")
+        else:
+            print(f"[Warning] Invalid station_id {station_id}. Message: {message}")
+
+    def reset_stdout(self):
+        """
+        Reset sys.stdout to its original value.
+        """
+        sys.stdout = sys.__stdout__
+
     def initialize_burnin(self, controller: a1.Controller):
         self.controller = controller
     
         self.list_velocity = []
         self.list_commands = []
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             self.list_commands.append(self.nominal_travel/2)
             self.list_velocity.append(self.speed)
        
@@ -62,14 +107,14 @@ class burn_in():
         
     def movetostart(self):
         try:
-            self.controller.runtime.commands.motion.moveabsolute(self.connected_axes, [-1 * i for i in self.list_commands], self.list_velocity)
+            self.controller.runtime.commands.motion.moveabsolute(self.test_axes, [-1 * i for i in self.list_commands], self.list_velocity)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
             time.sleep(2)
         
         try:
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
@@ -109,12 +154,14 @@ class burn_in():
         return round(value / multiple) * multiple
     
     def burn_in_data(self, cycle):
-        print(f'Collecting Data for cycle number: {cycle}')
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f'Collecting Data for cycle number: {cycle}', station_id=station_id)
         n = int(self.sample_rate * self.total_time)
 
         freq = a1.DataCollectionFrequency.Frequency1kHz
         
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             data_config = self.data_config(n, freq, axis)
             
             self.collect_data(data_config)
@@ -171,18 +218,18 @@ class burn_in():
             # If it's the first log, get the file position
             if cycle_log_position is None:
                 # Log the message for the first time and store its file position
-                with open(self.log_file_path, 'a') as log_file:
+                with open(self.stage_log_file, 'a') as log_file:
                     cycle_log_position = log_file.tell()  # Get the current position
                     log_file.write(cycle_log_message + '\n')
             else:
                 # Overwrite the previous cycle log entry
-                with open(self.log_file_path, 'r+') as log_file:
+                with open(self.stage_log_file, 'r+') as log_file:
                     log_file.seek(cycle_log_position)  # Go back to the position
                     log_file.write(cycle_log_message + '\n')
             if data_cycle == 1 or abs(cycle - data_cycle) <= 1:
                 self.burn_in_data(cycle)
                 
-                cycle += len(self.connected_axes) * 2
+                cycle += len(self.test_axes) * 2
                 data_cycle += data_interval
             else:
                 self.forward_move(self.dwell, self.list_velocity)
@@ -195,7 +242,7 @@ class burn_in():
                 # Increment Counter
                 cycle += 1
 
-        plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.encoder, self.burnin_time, self.job, self.op, self.comments, self.folder,self.text_widget)
+        plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations)
         plot.generate_plots()
         
         messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')    
@@ -203,7 +250,7 @@ class burn_in():
     def forward_move(self, dwell, speed):
         # Forward Move
         try:
-            self.controller.runtime.commands.motion.moveabsolute(self.connected_axes, self.list_commands, speed)
+            self.controller.runtime.commands.motion.moveabsolute(self.test_axes, self.list_commands, speed)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
@@ -211,7 +258,7 @@ class burn_in():
         time.sleep(dwell)
         
         try:
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes, 1)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes, 1)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
@@ -221,7 +268,7 @@ class burn_in():
     def reverse_move(self, dwell, speed):       
         # Reverse Move
         try:
-            self.controller.runtime.commands.motion.moveabsolute(self.connected_axes, [i*-1 for i in self.list_commands], speed)
+            self.controller.runtime.commands.motion.moveabsolute(self.test_axes, [i*-1 for i in self.list_commands], speed)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
@@ -229,7 +276,7 @@ class burn_in():
         time.sleep(dwell)
         
         try:
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes, 1)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes, 1)
         except (ControllerAxisFaultException, ControllerOperationException):
             faults_per_axis = self.check_for_faults()
             self.handle_faults(faults_per_axis)
@@ -285,7 +332,9 @@ class burn_in():
             }
         except Exception as e:
             # Handle any exceptions (like if data is missing for an axis)
-            print(f"Error retrieving data for axis {axis}: {e}")
+            for axis in self.test_axes:
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Error retrieving data for axis {axis}: {e}", station_id=station_id)
             separated_data = None  # Use None or another placeholder for missing data
     
         return separated_data
@@ -311,7 +360,7 @@ class burn_in():
         faults = {}  # Initialize an empty dictionary to store results per axis
         #decoded_faults_per_axis = {}  # Dictionary to store decoded faults for each axis
         
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             status_item_configuration = a1.StatusItemConfiguration()
             status_item_configuration.axis.add(a1.AxisStatusItem.AxisFault, axis)
             
@@ -327,7 +376,7 @@ class burn_in():
         return faults
     
     def handle_faults(self, faults_per_axis):
-        fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+        fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
         decoded_faults = fault_init.get_fault()
         
         for axis, faults in decoded_faults.items():
