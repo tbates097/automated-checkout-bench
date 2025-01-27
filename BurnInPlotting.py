@@ -18,7 +18,7 @@ from Logger import TextLogger
 
 class Burn_In_Plotting():
     
-    def __init__(self, axis_data, stage_type, burn_in_time, job, op, comments, folder, secondary_ui, specs_dict, stations):
+    def __init__(self, axis_data, stage_type, burn_in_time, job, op, comments, folder, secondary_ui, specs_dict, stations, test_axes):
         self.axis_data = axis_data
         self.stage_type = stage_type
         self.burn_in_time = burn_in_time
@@ -29,6 +29,7 @@ class Burn_In_Plotting():
         self.secondary_ui = secondary_ui
         self.specs_dict = specs_dict
         self.stations = stations
+        self.test_axes = test_axes 
         
         self.sample_rate = 1000
         # Extract available axes and cycles from the data

@@ -41,7 +41,6 @@ class burn_in():
         self.comments = comments
         self.specs_dict = specs_dict
         self.stations = stations
-        self.job_log_dir = job_log_dir
         self.stage_log_file = stage_log_file
         
         self.sample_rate = 1000
@@ -242,7 +241,7 @@ class burn_in():
                 # Increment Counter
                 cycle += 1
 
-        plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations)
+        plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations, self.test_axes)
         plot.generate_plots()
         
         messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')    

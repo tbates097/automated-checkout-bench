@@ -187,19 +187,19 @@ class stage_checkout():
         self.low_current_clamp = 3.5
         self.nominal_travel = float(self.specs_dict.get('NominalTravel').split()[0])
 
-        # Set the home offset and fault mask based on the encoder type
-        if self.absolute:
-            nominal_home_offset = 0
-            self.params(home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
-        else:
-            self.params(home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
+        for axis in self.test_axes:
+            # Set the home offset and fault mask based on the encoder type
+            if self.absolute:
+                self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
+            else:
+                self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
         
         # Wait for the controller to finish processing the previous commands
         time.sleep(2)
         self.enable_stages()
         time.sleep(5)
 
-    def params(self, home_offset=None, current_clamp=None, limit=None):
+    def params(self, axis, home_offset=None, current_clamp=None, limit=None):
         """
         Configure parameters for each connected axis on the controller.
 
@@ -231,27 +231,27 @@ class stage_checkout():
 
             return electrical_limit_value
         
-        for axis in self.test_axes:
-            # Retrieve current configuration parameters for the axis
-            configured_parameters = self.controller.configuration.parameters.get_configuration()
-            if home_offset:
-                if self.absolute:
-                    if isinstance(home_offset, int):
-                        configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset
-                    else:
-                        configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset[axis]
+        #for axis in self.test_axes:
+        # Retrieve current configuration parameters for the axis
+        configured_parameters = self.controller.configuration.parameters.get_configuration()
+        if home_offset:
+            if self.absolute:
+                if isinstance(home_offset, int):
+                    configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset
                 else:
-                    configured_parameters.axes[axis].homing.homeoffset.value = home_offset
-            if current_clamp:
-                configured_parameters.axes[axis].protection.limitdebouncedistance.value = 1
-                configured_parameters.axes[axis].protection.maxcurrentclamp.value = current_clamp
+                    configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset[axis]
+            else:
+                configured_parameters.axes[axis].homing.homeoffset.value = home_offset
+        if current_clamp:
+            configured_parameters.axes[axis].protection.limitdebouncedistance.value = 1
+            configured_parameters.axes[axis].protection.maxcurrentclamp.value = current_clamp
 
-            if limit:
-                electrical_limit_value = toggle_limits(limit, axis)
-                configured_parameters.axes[axis].protection.faultmask.value = electrical_limit_value
+        if limit:
+            electrical_limit_value = toggle_limits(limit, axis)
+            configured_parameters.axes[axis].protection.faultmask.value = electrical_limit_value
 
-            # Apply the updated configuration for each axis
-            self.controller.configuration.parameters.set_configuration(configured_parameters)
+        # Apply the updated configuration for each axis
+        self.controller.configuration.parameters.set_configuration(configured_parameters)
 
         # Reset the controller to apply changes
         self.controller.reset()
@@ -314,7 +314,7 @@ class stage_checkout():
                                 if confirm:
                                     # Continue and remove the axis from connected_axes
                                     self.station_print('Turning off software limits and resuming test.', station_id=station_id)
-                                    self.params(limit='software off')
+                                    self.params(axis, limit='software off')
                                     self.home_stages()
                                     self.check_hardstop()
                                 else:
@@ -348,7 +348,7 @@ class stage_checkout():
                             if confirm:
                                 # Continue and remove the axis from connected_axes
                                 self.station_print('Turning off software limits and resuming test.', station_id=station_id)
-                                self.params(limit='software off')
+                                self.params(axis, limit='software off')
                                 self.home_stages()
                                 self.check_hardstop()
                             else:
@@ -786,15 +786,20 @@ class stage_checkout():
                         cw_pos = stage_limit_pos
                     elif limit_type == 'Ccw':
                         ccw_pos = stage_limit_pos
-
+                print(f'CCW: {ccw_pos}, CW: {cw_pos}')
                 # Calculate the midpoint
+                #if cw_pos > ccw_pos:
                 midpoint = (ccw_pos + cw_pos) / 2
+                #else:
+                    #midpoint = (((ccw_pos + cw_pos) / 2) * -1)
                 self.midpoints[axis] = midpoint
                 self.data[f"Axis: {axis}"]["Home Offset"] = midpoint
-                
+                print(f'Midpoint for {axis}: {self.data[f"Axis: {axis}"]["Home Offset"]}')
+
+            for axis in self.test_axes:    
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
                 # Following 4 lines along with reset command physically change the values in the active MCD
-                configured_parameters.axes[axis].homing.homeoffset.value = midpoint
+                configured_parameters.axes[axis].homing.homeoffset.value = self.midpoints[axis]
                 self.controller.configuration.parameters.set_configuration(configured_parameters)
 
         self.controller.reset()
@@ -828,7 +833,7 @@ class stage_checkout():
         
         # Set additional parameters and reset the controller
         for axis in self.test_axes:
-            self.params(home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
+            self.params(axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
         self.controller.reset()
         time.sleep(10)
         
@@ -943,7 +948,7 @@ class stage_checkout():
         
         def cw_check():
             limit = 'Cw'
-            self.enable(test)
+            self.enable(test=test)
             for axis in self.test_axes:
                 try:
                     self.controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
@@ -974,7 +979,7 @@ class stage_checkout():
             
         def ccw_check():
             limit = 'Ccw'
-            self.enable(test)
+            self.enable(test=test)
             time.sleep(2)
             for axis in self.test_axes:
                 try:
@@ -1012,9 +1017,8 @@ class stage_checkout():
         
         for axis in self.test_axes:
             self.data[f"Axis: {axis}"]["Limits"] = "Passed"
-
-        # Reapply parameters and home the struts
-        self.params(current_clamp=self.max_current_clamp, limit='electrical on')
+            # Reapply parameters and home the struts
+            self.params(axis, current_clamp=self.max_current_clamp, limit='electrical on')
     
         # Enable connected axes before homing
         attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.test_axes.copy()))
@@ -1049,9 +1053,9 @@ class stage_checkout():
         self.station_print('Checking Marker to Limit Distance')
         test = 'marker to limit'
         limit = 'Ccw'
-        
-        # Change home offset to zero for marker to limit check
-        self.params(home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
+        for axis in self.test_axes:
+            # Change home offset to zero for marker to limit check
+            self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
 
         self.home_stages()
 
@@ -1071,9 +1075,14 @@ class stage_checkout():
 
         # Reapply parameters and home the struts
         for axis in self.test_axes:
-            self.params(home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit='electrical on')
+            self.params(axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit='electrical on')
+        
+        self.enable()
+        time.sleep(2)
+        self.home_stages()
+        time.sleep(2)
 
-    def enable(self, test):
+    def enable(self, test=None):
         """
         Enables the connected axes and handles any faults that may occur.
 
@@ -1528,7 +1537,7 @@ class stage_checkout():
         Configures the loggers and handlers for both log files.
         """
         # Create the root directory for logs if it doesn't exist
-        base_log_dir = r"O:\Strut Checkout"
+        base_log_dir = r"O:\CMP Check-out"
         os.makedirs(base_log_dir, exist_ok=True)
 
         # Create a subdirectory for the current job using self.job
