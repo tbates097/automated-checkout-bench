@@ -1,41 +1,18 @@
-from PyQt5 import QtWidgets, QtSql, QtGui
+from PyQt5 import QtWidgets, QtSql, QtGui, QtCore
 from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtWidgets import QCompleter
 from mainwindow import Ui_MainWindow
-#from popup_accel_decel import Ui_Dialog as popup_accel_decel
-#from popup_constant_velocity import Ui_Dialog as popup_constant_velocity
-#from popup_decel_to_zero import Ui_Dialog as popup_decel_to_zero
-#from popup_dwell import Ui_Dialog as popup_dwell
-#from popup_point_to_point import Ui_Dialog as popup_point_to_point
-#from popup_brake import Ui_Dialog as popup_brake
 from popup_config_window import Ui_Dialog as popup_config
-#from popup_inertia_calc import Ui_Dialog as popup_inertia_calc
-#from popup_payload_calc import Ui_Dialog as popup_payload_calc
 from popup_spec_display import Ui_Dialog as popup_spec_display
-# from shutil import copyfile  # moved local to "save" "saveAs" and "open" functions
 import sys
 import os
 import time
 import re
-#from setuptools import pkg_resources
-#.py2_warn
-#from setuptools import pkg_resources.markers
-# import winreg
-# from win32comext.shell import shell, shellcon
 import sqlite3 as lite
-# import re  # moved local to "refresh_plots" "edit_profile" and "calc_results" functions
 import datetime
 import numpy as np
-# import time  # moved local to "save" and "saveAs" functions
-# from matplotlib.figure import Figure  # moved loacal to "MplCanvas" class
+import traceback
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
-# from matplotlib import rc  # moved local to "refresh_plot"
-# import scipy.integrate as sint  # moved local to "refresh_plot"
-# import pandas as pd  # moved local to "calc_results" function
-# from reportlab.lib.pagesizes import letter  # moved local to "print" function
-# from reportlab.pdfgen import canvas  # moved local to "print" function
-# from reportlab.pdfbase import pdfmetrics, ttfonts  # moved local to "print" function
-
 
 # Version 1.08
 # global definitions---------------------------------------
@@ -74,11 +51,6 @@ if not getattr(sys, 'frozen', False):
     config_filepath = r"C:\Users\tbates\Python\automated-checkout-bench\master.db"  # use this when running in python
 else:
     config_filepath = resource_path('master.db')  # change to this before deploying as .exe
-
-'''        if not getattr(sys, 'frozen', False):
-            plot_path = dir_path + r"\Temp Files\\" + "print_plot" + date_string + ".png"  # saves in temp file dir
-        else:
-            plot_path = pf_path + r"\Temp Files\\" + "print_plot" + date_string + ".png"  # saves in temp file dir'''
 
 # create temp file
 date_string = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")[:-4]
@@ -142,8 +114,9 @@ class ConfigSizer:
 class PopupConfig(QtWidgets.QDialog, popup_config):
     """Instantiates and performs all configuration logic via Master db and logical adjustments"""
     def __init__(self, parent=None,stage=None):
-
+        print("PopupConfig")
         QtWidgets.QDialog.__init__(self)
+        print('PopupConfig initialize variables')
         self.stage = stage 
         #print(self.stage)
         self.spec_names = []
@@ -159,56 +132,113 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         self.stageType=""
         self.configured = False
         #if not ("-" in self.stage) or (not "XY-" in self.stage ):
-        text_file = open(resource_path("Products.txt"), "r")
-        names = text_file.readlines()
+        #text_file = open(resource_path("Products.txt"), "r")
+        #names = text_file.readlines()
         #print(names)
-        new_names =[]
-        for name in names:
-            new_names.append(name.strip())
-        text_file.close()
-        text_file = open(resource_path("Motors.txt"),"r")
-        motor_names = text_file.readlines()
-        corrected_motor_names=[]
-        for name in motor_names:
-            corrected_motor_names.append(name.strip())
-            
+        #new_names =[]
+        #for name in names:
+            #new_names.append(name.strip())
+        #text_file.close()
+        
+        print('PopupConfig initialize UI')
+        # Setup the UI
+        self.setupUi(self)
+
+        self.spec_names = []
+        self.spec_vals = []
+        self.smart_string = ""
+
+        # Disconnect default PyQt5 connections and replace them with our custom functions
+        try:
+            self.buttonBox.accepted.disconnect()
+            self.buttonBox.rejected.disconnect()
+            print("Disconnected default buttonBox signals.")
+        except TypeError:
+            print("No default signals to disconnect.")
+
+        # Connect buttons to our custom functions
+        self.buttonBox.accepted.connect(self.handle_accept)
+        self.buttonBox.rejected.connect(self.handle_reject)
+        print("Connected buttonBox to handle_accept and handle_reject.")
+
+    def handle_accept(self):
+        print("handle_accept called. OK button clicked.")
+        self.configured = True
+        if not self.isVisible():
+            print("⚠️ WARNING: handle_accept was triggered AFTER exec_() returned!")
+
+        self.accept()  # Ensure dialog is accepted
+
+    def handle_reject(self):
+        """Detect if reject() is being called too soon."""
+        print("❌ handle_reject called. Cancel button clicked.")
+        
+        # Print a stack trace to see where reject() is being triggered from
+        import traceback
+        traceback.print_stack()
+        
+        self.configured = False
+        self.reject()
+
+    def reset_state(self):
+        """Reset dialog state before showing."""
+        print("Resetting PopupConfig state...")
+        self.configured = False
+        self.spec_names = []
+        self.spec_vals = []
+        self.smart_string = ""
+
+    def closeEvent(self, event):
+        """Detect if the dialog is closing unexpectedly and print a stack trace."""
+        print("❌ closeEvent called! Preventing premature closure.")
+        
+        # Print a stack trace to see where the close request is coming from
+        traceback.print_stack()
+
+        # Prevent closing unless user explicitly clicks OK or Cancel
+        if not self.configured:
+            print("Preventing premature closure. Dialog remains open.")
+            event.ignore()
+        else:
+            print("Allowing closure.")
+            event.accept()
         #print(corrected_motor_names)
         #print(self.stage in corrected_motor_names)
-        checkMotor = self.stage.split("-")
-        if (not self.stage in new_names and not (self.stage in corrected_motor_names)):
-            self.configured = True
+        #checkMotor = self.stage.split("-")
+        #if (not self.stage in new_names and not (self.stage in corrected_motor_names)):
+            #self.configured = True
         
-        
+        #print(self.configured)
         # if "XY" in self.stage:
             # if "XY-" in self.stage:
                # self.configured = True 
         # if "-" in self.stage and "XY" not in self.stage :
             # self.configured = True
-        if not self.configured: 
+        #if not self.configured: 
             #print("need to configure")
-            self.setupUi(self)
-        else:
-            self.configured = True
+            #self.setupUi(self)
+        #else:
+            #self.configured = True
             #self.l1=QtWidgets.QLabel("Let's Close this Window")
-            self.resize(200,40)
+            #self.resize(200,40)
             
             
-            self.configured_txt_box = QtWidgets.QLabel(self)
+            #self.configured_txt_box = QtWidgets.QLabel(self)
             
-            self.configured_txt_box.setText("Press Ok to Configure")
-            self.buttonBox = QtWidgets.QDialogButtonBox(self)
+            #self.configured_txt_box.setText("Press Ok to Configure")
+            #self.buttonBox = QtWidgets.QDialogButtonBox(self)
             #self.buttonBox.setAlignment(Lower)
-            self.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel|QtWidgets.QDialogButtonBox.Ok)
-            self.buttonBox.accepted.connect(self.accept)
-            self.buttonBox.rejected.connect(self.reject)
-            self.layout = QtWidgets.QGridLayout()
-            self.layout.addWidget(self.configured_txt_box,0,0)
-            self.layout.addWidget(self.buttonBox,1,0)
-            self.setLayout(self.layout)
+            #self.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel|QtWidgets.QDialogButtonBox.Ok)
+            #self.buttonBox.accepted.connect(self.accept)
+            #self.buttonBox.rejected.connect(self.reject)
+            #self.layout = QtWidgets.QGridLayout()
+            #self.layout.addWidget(self.configured_txt_box,0,0)
+            #self.layout.addWidget(self.buttonBox,1,0)
+            #self.setLayout(self.layout)
             #self.l1.setAlignment(QtGui.AlignCenter)
             #self.setCentralWidget(self.l1)
-            self.exit=QtWidgets.QAction("Exit Application",shortcut=QtGui.QKeySequence("Ctrl+q"),triggered=lambda:self.exit_app)
-            self.addAction(self.exit)
+            #self.exit=QtWidgets.QAction("Exit Application",shortcut=QtGui.QKeySequence("Ctrl+q"),triggered=lambda:self.exit_app)
+            #self.addAction(self.exit)
     
     
     def exit_app(self):
@@ -658,14 +688,23 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         #return self.ruleIDS
     def makeConnections(self,count):    
         self.config_boxes[count].currentTextChanged.connect(lambda: self.checkRules(count,self.stage))
-        
-
-    def return_values(parent = None,stage = None):
-        #stage = self.stage
-        #print("return_values")
+                
+    def return_values(parent = None, stage = None):
+        print("return_values")
         stage = stage.rstrip()
-        dialog = PopupConfig(parent,stage)
-        #print(dialog.configured)
+        if parent is None:
+            parent = QtWidgets.QApplication.instance()
+        if hasattr(parent, 'dialog') and parent.dialog:
+            print("⚠️ Deleting previous dialog instance to avoid reuse.")
+            parent.dialog.deleteLater()
+            del parent.dialog
+        parent.dialog = PopupConfig(None, stage)
+        dialog=parent.dialog
+        dialog.reset_state()
+        QtWidgets.QApplication.processEvents()
+        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+        dialog.setModal(True)
+        print(f'Dialog Configured: {dialog.configured}')
         if dialog.configured is True:
             #print("configured")
             dialog.setVisible(False)
@@ -679,14 +718,11 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         dialog.ruleIDS = []
         dialog.axis = "All"
         if dialog.configured == False:
-            #print("not configured")
             dialog.setDBTable(dialog.inputs_app,dialog.stage)
-            # dialog.config_options.select() printTable
-            #print(dialog.stage)
             dialog.config_inputs = []
             dialog.config_boxes = [dialog.Config1,dialog.Config2,dialog.Config3,dialog.Config4,dialog.Config5,dialog.Config6,dialog.Config7]
             dialog.config_txts = [dialog.txt_config_1,dialog.txt_config_2,dialog.txt_config_3,dialog.txt_config_4,dialog.txt_config_5,dialog.txt_config_6,dialog.txt_config_7]
-            
+
             for i in range(dialog.config_options.rowCount()):
                 dialog.input_name = dialog.config_options.record(i).value("Input Name")
                 dialog.value = dialog.config_options.record(i).value("Value")
@@ -760,27 +796,17 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                 dialog.config_boxes[count].setVisible(False)
                 dialog.config_txts[count].setVisible(False)
         else:
-            #print("configured")
             temp = dialog.stage 
             if dialog.stage.endswith("-Lower"):
-                #print("true")
                 dialog.axis = 1
                 temp = dialog.stage.replace("-Lower","")
-                #temp = dialog.stage[0:len(dialog.stage)-6]
-                #dialog.stage = temp
             if dialog.stage.endswith("-Upper"):
                 dialog.axis = 2
                 temp = dialog.stage.replace("-Upper","")
-                #dialog.stage = temp
-            #print(dialog.stage[0:len(dialog.stage)-6])
-            #print(temp)
             configs = temp.split("-")
             testAgainst = ["MPS50SL","ECO115SL","ECO165SL","ECO225SL"]
             planarCheck = ["PlanarDL","PlanarDLA","ATS3600","MPS50SV","MPS75SV","ANT95V","ANT130V","CCS130DR"]
-            #for config in configs[1:]:
-             #   config = "-" + config
             configs[1:] = ["-" + config for config in configs[1:]]
-            #print(configs)
             if configs[0].endswith("SL") or configs[0].endswith("SLE") and configs[0] not in testAgainst:
                 if configs[0].endswith("SL"):
                     configs[0] = configs[0][:-2]
@@ -791,47 +817,32 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
             if configs[0] in planarCheck:
                 dialog.checkRules(configs[2:],configs[0]+configs[1])
             else:
-                #print(str(configs[1:]))
-                #print(str(configs[0]))
                 dialog.checkRules(configs[1:], configs[0])
           
             dialog.setVisible(False)
        
-        #print(dialog.spec_names)
         dialog.motor,dialog.mtr_spec_names,dialog.mtr_spec_vals,dialog.mtr_spec_dtype = dialog.getMotor()
-        # for name in dialog.mtr_spec_names:
-            # print(name)
-        # for val in dialog.mtr_spec_vals:
-            # print(val)
-        #print(dialog.mtr_spec_names)
-        #print("stage = "+ stage)
 
+        print("🟡 Pausing before exec_() to verify execution order.")
+        time.sleep(1)  # Give time to see if something else is closing it
+        #loop = QtCore.QEventLoop()
+        #dialog.finished.connect(loop.quit)
         result = dialog.exec_()
+        #loop.exec_()  # Show the dialog and block until the user interacts
+        print(f"❌ Dialog exec_() completed with result: {result}")
+
         dialog.setDBTable(dialog.inputs_app,stage)
         dialog.config_options.select()
-        #dialog.printTable("Value Description","Value")
         smart_string = []
-        #motor_smart_string = []
         if dialog.configured is False:
             for config in dialog.config_boxes:
-                #dialog.config_options.setFilter()
                 dialog.config_options.select()
-                #dialog.printTable("Value Description", "Value")
-                #print("Value Desc: " +str(dialog.config_options.record(0).value("Value Description")))
-                #print("row count " +str(dialog.config_options.rowCount()))
-                #print(config.currentText())
                 if config.currentText() != "":
-                    #print("\"Value Description\" LIKE '" + config.currentText().rstrip() + "'")
-                    #dialog.printTable("Input Name", "Value")
                     dialog.config_options.setFilter("\"Value Description\" LIKE '" + config.currentText().rstrip() + "'")
                     dialog.config_options.select()
-                    #print(dialog.config_options.rowCount())
                     if dialog.config_options.rowCount()!=0:
-                        #print(str(dialog.config_options.record(0).value("Value")))
                         smart_string.append(str(dialog.config_options.record(0).value("Value")))
-                        dialog.smart_string = smart_string
-
-        #print(smart_string)
+                        
         motor_smart_string=""
         stage_config = stage
         for item in smart_string:
@@ -840,22 +851,16 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
             stage_config = stage_config + "-Lower"
         if dialog.axis == 2 and not stage_config.endswith("-Upper"):
             stage_config = stage_config + "-Upper"
-        #print(stage_config)
         configs =[]
-        # print(dialog.motor)
         if dialog.motor != "":
             motorConfig= dialog.motor.split(" ",1)
-            #print(motorConfig)
             if len(motorConfig) > 1:
                 configs = re.findall(r'"(.*?)"', motorConfig[1])
                 motor_smart_string = motorConfig[0]
-                #print("if")
-                #print(configs)
                 dialog.setDBTable(dialog.inputs_app,motorConfig[0])
                 dialog.config_options.select()
                 if motorConfig[0].endswith("_Specs"):
                     motorConfig[0]= motorConfig[0][:-6]
-                    #print(motorConfig[0])
                     motor_smart_string=motorConfig[0]
                 elif dialog.config_options.rowCount()==0:
                     temp=dialog.motor.split("(",1)   
@@ -864,28 +869,25 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
                     motor_smart_string = motor_smart_string + param
                 if configs ==[]:
                     motor_smart_string = motor_smart_string + "-" + motorConfig[1]
-
-                
             else:
                 motor_smart_string = motorConfig[0]
-            #param_split = motorConfig[1].split(":")
-            #for param in param_split:
-                
-                
-                #print(config)
-            
-        #temp = re.findall('\(([^)]+)', motor_smart_string[1])
-        #print(temp)
-        #print(dialog.spec_names)
-        #print(dialog.spec_vals)
-        return motor_smart_string, "", dialog.mtr_spec_names, dialog.mtr_spec_vals, dialog.stage, "", \
-            dialog.spec_names, dialog.spec_vals,stage_config
+        # Show the dialog and wait for the result
+        spec_names = dialog.spec_names
+        spec_vals = dialog.spec_vals
+        smart_string = smart_string
+        
+        del dialog
+        if result == QtWidgets.QDialog.Accepted:
+            print('Accepted')
+            return spec_names, spec_vals, smart_string
+        else:
+            print('Cancelled')
+            return None, None, None
     
 class PopupSpecDisplay(QtWidgets.QDialog, popup_spec_display):
     """Opens Spec Display window form"""
     def __init__(self, parent=None):
         QtWidgets.QDialog.__init__(self)
-        #self.inertia= str(round(inertia,4))
         self.setupUi(self)        
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -950,13 +952,7 @@ class PopupSpecDisplay(QtWidgets.QDialog, popup_spec_display):
             i=i+1
         result=dialog.exec_()
         return result
-
-        
- # def accept(self):
-        # self.return_values(self,inertia=self.inertia,completed=True)
-    # def reject(self):
-        # self.return_values(self,inertia="",completed=True)
-
+    
 class MplCanvas(Canvas):
     def __init__(self):
         """Creates Canvas object for matplotlib plots to reside in."""
@@ -1006,152 +1002,10 @@ class MplWidget(QtWidgets.QWidget):
 class App(QtWidgets.QMainWindow):
     """Main Window"""
     def __init__(self):
-    
-        """Initialize all UI elements, mostly linking buttons to functions and tables to sources."""
         super(App, self).__init__()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-        self.configured = False
-        # comment the 3 lines below if running out of IDE
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(resource_path("amszr.png")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.setWindowIcon(icon)
-
+        print("App init")
+        """Initialize all UI elements, mostly linking buttons to functions and tables to sources."""
        
-        self.ui.actionNew.triggered.connect(self.new)
-        self.ui.actionOpen.triggered.connect(self.open)
-        self.ui.actionSave.triggered.connect(self.save)
-        self.ui.actionSave_As.triggered.connect(self.saveAs)
-        self.ui.actionPrint.triggered.connect(self.print)
-        self.ui.actionExit.triggered.connect(self.close)
-        self.ui.actionInertia_Calculator.triggered.connect(self.show_inertia_calc)
-       # self.ui.actionPayload_Calculator.triggered.connect(self.show_payload_calc)
-        self.ui.actionSpecs_Display.triggered.connect(lambda: self.show_spec_display(config="stage"))
-        self.ui.actionDisplay_Motor_Specs.triggered.connect(lambda: self.show_spec_display(config="motor"))
-        
-        self.ui.btn_current_limitation_browser.setVisible(False)
-        self.ui.btn_current_limitation_browser.clicked.connect(self.show_current_limitation_browser)
-
-        self.ui.btn_add_dwell.clicked.connect(self.show_dwell_dialog)
-        self.ui.btn_add_decel_to_zero.clicked.connect(self.show_decel_to_zero_dialog)
-        self.ui.btn_add_accel.clicked.connect(self.show_accel_decel_dialog)
-        self.ui.btn_add_constant_velocity.clicked.connect(self.show_constant_velocity_dialog)
-        self.ui.btn_add_point_to_point.clicked.connect(self.show_point_to_point_dialog)
-        self.ui.btn_add_config_window.clicked.connect(lambda: self.show_popup_config_dialog(config="stage"))
-        self.ui.btn_add_motor_config_window.clicked.connect(lambda: self.show_popup_config_dialog(config ="motor"))
-
-        self.ui.btn_motion_up.clicked.connect(lambda: self.move_profile(direction="up"))
-        self.ui.btn_motion_down.clicked.connect(lambda: self.move_profile(direction="down"))
-        self.ui.btn_motion_delete.clicked.connect(self.delete_profile)
-        self.ui.btn_motion_edit.clicked.connect(self.edit_profile)
-        self.ui.btn_motion_brake.clicked.connect(self.brake_profile)
-        
-        text_file = open(resource_path("Products.txt"), "r")
-        names = text_file.readlines()
-        completer = QCompleter(names)
-        completer.setCaseSensitivity(0)
-        self.ui.stage_config_input.setCompleter(completer)
-        stage = self.ui.stage_config_input.text()
-        text_file.close()
-        
-        text_file = open(resource_path("Motors.txt"), "r")
-        motor_names = text_file.readlines()
-        MotorCompleter = QCompleter(motor_names)
-        MotorCompleter.setCaseSensitivity(0)
-        self.ui.motor_name.setCompleter(MotorCompleter)
-        motor = self.ui.motor_name.text()
-
-        self.plotWidget = MplWidget(self.ui.widget_plot)
-        screen_size = QtWidgets.QDesktopWidget.screenGeometry(QtWidgets.QApplication.desktop())
-
-        # scale factors below chosen empirically to optimize for both 1920x1080 and 1024x768 resolutions
-        if screen_size.width() >= 1900 and screen_size.height() >= 1000:
-            self.plotWidget.setMinimumWidth(int(float(screen_size.width()) * .45))
-            self.plotWidget.setMinimumHeight(int(float(screen_size.height()) * .45))
-            self.ui.widget_plot.setMinimumWidth(int(float(screen_size.width()) * .45))
-            self.ui.widget_plot.setMinimumHeight(int(float(screen_size.height()) * .45))
-        else:
-            self.plotWidget.setMinimumWidth(int(float(screen_size.width()) * .4))
-            self.plotWidget.setMinimumHeight(int(float(screen_size.height()) * .4))
-            self.ui.widget_plot.setMinimumWidth(int(float(screen_size.width()) * .4))
-            self.ui.widget_plot.setMinimumHeight(int(float(screen_size.height()) * .4))
-        MplWidget.updateGeometry(self.ui.widget_plot)
-        self.refresh_plot()
-
-        self.db = Database()
-        self.model = Model(self)
-        self.ui.list_motion.setModel(self.model)
-        self.ui.list_motion.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.ui.list_motion.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.ui.list_motion.setColumnWidth(0, 60)
-        self.ui.list_motion.setColumnWidth(1, 100)
-        self.ui.list_motion.setColumnWidth(2, int(680*(screen_size.width()/1920)))
-        self.ui.list_motion.selectRow(0)  # select first row by default to help avoid errors.
-
-        self.db_sizer = DatabaseSizer()
-        self.stage_type = self.ui.txt_stage_type.text()
-        # self.model_stages = QtSql.QSqlTableModel(self, db=self.db_sizer.data)
-        # self.model_stages.setTable("Stages")
-        # self.model_stages.setFilter("Name NOT LIKE 'Units' ORDER BY Name ASC")
-        # self.model_stages.select()
-        # self.ui.cmb_stage_select.setModel(self.model_stages)
-        # self.ui.cmb_stage_select.setModelColumn(0)
-        
-        
-
-        # self.model_motors = QtSql.QSqlTableModel(self, db=self.db_sizer.data)
-        # self.model_motors.setTable("Motors")
-        # self.model_motors.setFilter("Name NOT LIKE 'Units' ORDER BY Name ASC")
-        # self.model_motors.select()
-        #self.ui.cmb_motor_select.setModel(self.model_motors)
-        #self.ui.cmb_motor_select.setCurrentText(self.show_popup_config_dialog.motor)
-
-        self.model_drives = QtSql.QSqlTableModel(self, db=self.db_sizer.data)
-        self.model_drives.setTable("Drives")
-        self.model_drives.select()
-        self.ui.cmb_drive_select.setModel(self.model_drives)
-        self.ui.cmb_drive_select.setModelColumn(1)
-
-        self.model_bus_voltage = QtSql.QSqlTableModel(self, db=self.db_sizer.data)
-        self.model_bus_voltage.setTable("BusVoltages")
-
-        #self.ui.stage_config_input.editingFinished.connect(self.on_stage_change)
-        #self.ui.motor_name.editingFinished.connect(lambda: self.on_motor_change(motor=self.ui.motor_name.text()))
-        self.ui.cmb_drive_select.currentTextChanged.connect(self.on_drive_change)
-        self.ui.cmb_select_bus_voltage.currentTextChanged.connect(self.on_bus_change)
-        self.ui.cmb_vacuum.currentTextChanged.connect(self.calc_results)
-        self.ui.cmb_input_voltage.currentTextChanged.connect(self.calc_results)
-        self.ui.cmb_aircooling.currentTextChanged.connect(self.calc_results)
-
-        self.ui.txt_payload.editingFinished.connect(self.calc_results)
-        self.ui.txt_ambient_temperature.editingFinished.connect(self.calc_results)
-        self.ui.txt_orientation.editingFinished.connect(self.calc_results)
-        
-       # count =0
-        #print(self.ui.stage_config_input.text())
-        #self.on_stage_change()
-        #self.on_motor_change(self.ui.motor_name.text())
-        self.on_drive_change(self.ui.cmb_drive_select.currentText())
-        self.ui.stage_config_input.setFocus()
-        self.set_units()
-        #self.bus_voltage_visible()
-
-        sys._excepthook = sys.excepthook
-
-        def exception_hook(exctype, value, traceback):
-            print(exctype, value, traceback)
-            sys._excepthook(exctype, value, traceback)
-            sys.exit(1)
-
-        sys.excepthook = exception_hook
-        
-        # if below detects if app was launched from save file (sys.argv is length 1 if launched from .exe) and opens it.
-        if len(sys.argv) >= 2:
-            # msg = QtWidgets.QMessageBox()
-            # disp = ' '.join(sys.argv[1:])
-            # self.open(path=sys.argv[1])
-            self.open(path=' '.join(sys.argv[1:]))
-    
     def readProducts(self):
         #print("reading products")
         text_file = open(resource_path("Linear Motor.txt"), "r")
@@ -2664,246 +2518,6 @@ class App(QtWidgets.QMainWindow):
         msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
         msg.exec_()
         return        
-        # exit function if no Stage/Motor selected or if no Profile has been defined.
-        if self.ui.stage_config_input.selectAll == ''\
-                or self.ui.motor_name.text() == ""\
-                or not records:
-            msg = QtWidgets.QMessageBox()
-            msg.setText("Stage, Motor, and Motion Profile must all be defined to print results. "
-                        "Please specify these items and try again.")
-            msg.setIcon(QtWidgets.QMessageBox.Warning)
-            msg.setWindowTitle("Print Error")
-            msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
-            msg.exec_()
-            return
-
-        output_file = QtWidgets.QFileDialog.getSaveFileName(filter="PDF (*.pdf")[0]
-        if not output_file:
-            return
-
-        if not getattr(sys, 'frozen', False):
-            logo = "AerotechLogo.png"
-        else:
-            logo = resource_path("AerotechLogo.png")
-
-        pdfmetrics.registerFont(ttfonts.TTFont('Open Sans', resource_path('fonts/OpenSans-Regular.ttf')))
-        pdfmetrics.registerFont(ttfonts.TTFont('Saira', resource_path('fonts/Saira-Regular.ttf')))
-        pdfmetrics.registerFont(ttfonts.TTFont('Saira Bold', resource_path('fonts/Saira-Bold.ttf')))
-
-        pdf = canvas.Canvas(output_file, pagesize=letter)  # note pdf is 612 px wide x 792 px high
-
-        # logo in header with line under it
-        logo_w = 2555/12
-        logo_h = 424/12
-        pdf.drawImage(logo, 612-logo_h-logo_w, 792-logo_h*1.5, width=logo_w, height=logo_h)
-        pdf.setLineWidth(.7)
-        pdf.line(612/2, 792-logo_h*1.75, 612-logo_h*.5, 792-logo_h*1.75)
-
-        # section headings
-        pdf.setFont('Saira Bold', 22)
-        pdf.drawString(40, 792 - 90, "Motion")
-        pdf.drawString(40, 792 - 370, "Stage")
-        pdf.drawString(250, 792 - 370, "Motor")
-        pdf.drawString(450, 792 - 370, "Drive")
-        pdf.drawString(40, 792 - 570, "Application")
-        pdf.drawString(250, 792 - 570, "Results")
-
-        # add plot to pdf
-        date_string = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")[:-4]
-        if not getattr(sys, 'frozen', False):
-            plot_path = dir_path + r"\Temp Files\\" + "print_plot" + date_string + ".png"  # saves in temp file dir
-        else:
-            plot_path = pf_path + r"\Temp Files\\" + "print_plot" + date_string + ".png"  # saves in temp file dir
-        self.plotWidget.canvas.fig.savefig(plot_path, dpi=150)  # specify dpi to make sure it looks good
-        pdf.drawImage(plot_path, 40, 792 - 350, 512, 250)
-
-        # add stage, motor, and drive selections
-        pdf.setFont('Open Sans', 14)
-        #print(self.ui.stage_config_input.text())
-        motor = self.ui.motor_name.text().split("(")
-        motor = motor[0].rstrip()
-        pdf.drawString(40, 792 - 390, self.ui.stage_config_input.text().strip())
-        pdf.drawString(250, 792 - 390, motor)
-        pdf.drawString(450, 792 - 390, self.ui.cmb_drive_select.currentText())
-
-        # add hyperlinks
-        con = lite.connect(db_filepath)
-        with con:
-            cur = con.cursor()
-            cur.execute("SELECT * FROM Drives WHERE Name='%s'" % self.ui.cmb_drive_select.currentText())
-            drive_record = cur.fetchone()
-            drive_url = str(drive_record[8])
-            drive_img = str(drive_record[9])
-        
-            # cur.execute("SELECT * FROM Motors WHERE Name='%s'" % self.ui.motor_name.text())
-            # motor_record = cur.fetchone()
-            # motor_url = str(motor_record[29])        i
-            # motor_img = str(motor_record[37])
-            # cur.execute("SELECT * FROM Stages WHERE Name='%s'" % self.ui.cmb_stage_select.currentText())
-            # stage_record = cur.fetchone()       
-            # stage_url = str(stage_record[40])
-            # stage_img = str(stage_record[44])
-        if not getattr(sys, 'frozen', False):
-            img_path = dir_path + r"\Temp Files\\" # saves in temp file dir
-        else:
-            img_path = pf_path + r"\Temp Files\\"   # saves in temp file dir
-            
-        motor = self.ui.motor_name.text().split("(")
-        motor = motor[0].rstrip()
-        self.config_sizer = ConfigSizer()
-        self.config_options = QtSql.QSqlTableModel(db = self.config_sizer.data)
-        self.config_options.setTable(motor + "_TemplateSpecs")
-        self.config_options.select()
-        self.config_options.setFilter("SpecName LIKE 'URL'")
-        self.config_options.select()
-        if not self.config_options.rowCount() == 0:
-            page = requests.get(self.config_options.record(0).value("Value"))
-            #print(self.config_options.record(0).value("Value"))
-            html = page.text
-            #print(html)
-            pat = re.compile(r'<\s*img [^>]*src="([^"]+)')
-            img = pat.findall(html)
-            motor_url="None"
-            motor_img="None"
-            #print(img)
-            for image in img:
-                if image.endswith("1000x1000-resize-ffffff.jpg"):
-                    with open(img_path + 'motor.jpg', 'wb') as outf:
-                        data = requests.get("https://www.aerotech.com" + image).content
-                        outf.write(data)
-                    motor_url = str(self.config_options.record(0).value("Value"))
-                    motor_img = 'motor.jpg'
-                elif image.endswith("1000x1000-resize-ffffff.png"):
-                    with open(img_path+'motor.png', 'wb') as outf:
-                        data = requests.get("https://www.aerotech.com" + image).content
-                        outf.write(data)   
-                    motor_url = str(self.config_options.record(0).value("Value"))
-                    motor_img = 'motor.png'                
-        
-        stage = self.ui.stage_config_input.text().strip()
-        self.config_options.setTable(stage + "_TemplateSpecs")
-        self.config_options.select()
-        self.config_options.setFilter("SpecName LIKE 'URL'")
-        self.config_options.select()
-        
-        if not self.config_options.rowCount() == 0:
-            page = requests.get(self.config_options.record(0).value("Value"))
-            html = page.text
-            #print(html)
-            pat = re.compile(r'<\s*img [^>]*src="([^"]+)')
-            img = pat.findall(html)
-            for image in img:
-                stage_url="None"
-                stage_img="None"
-                #print(image)
-                if image.endswith("1000x1000-resize-ffffff.jpg"):
-                    with open(img_path+'stage.jpg', 'wb') as outf:
-                        data = requests.get("https://www.aerotech.com" + image).content
-                        outf.write(data)   
-                    stage_url = str(self.config_options.record(0).value("Value"))
-                    stage_img = 'stage.jpg'
-                elif image.endswith("1000x1000-resize-ffffff.png"):
-                    with open(img_path+'stage.png', 'wb') as outf:
-                        data = requests.get("https://www.aerotech.com" + image).content
-                        outf.write(data)   
-                    stage_url = str(self.config_options.record(0).value("Value"))
-                    stage_img = 'stage.png'
-            #print(img)
-                    
-        else:
-            stage_url = "None"
-            stage_img = "None"
-        pdf.setFont('Open Sans', 11)
-        pdf.setFillColorRGB(0.0234375, 0.26953125, 0.67578125)  # only accepts 0-1... so this is 6/256, 69/256, 173/256
-        pdf.drawString(40, 792 - 405, "link")
-        pdf.linkURL(stage_url, (40, 792 - 410, 60, 792 - 395), relative=0, thickness=0)
-        if not motor_url == "None":
-            pdf.drawString(250, 792 - 405, "link")
-            pdf.linkURL(motor_url, (250, 792 - 410, 270, 792 - 395), relative=0, thickness=0)
-        if not drive_url == "None":
-            pdf.drawString(450, 792 - 405, "link")
-            pdf.linkURL(drive_url, (450, 792 - 410, 470, 792 - 395), relative=0, thickness=0)
-
-        # add images
-        if not stage_img == "None":
-            pdf.drawImage(img_path+stage_img, 40, 792 - 550, width=150, height=150,
-                          preserveAspectRatio=True, anchor='c')
-        if not motor_img == "None":
-            pdf.drawImage(img_path+motor_img, 250, 792 - 550, width=150, height=150,
-                          preserveAspectRatio=True, anchor='c')
-        if not drive_img == "None":
-            pdf.drawImage(resource_path("imgs/" + drive_img), 450, 792 - 550, width=150, height=150,
-                          preserveAspectRatio=True, anchor='c')
-
-        # add app info
-        pdf.setFont('Open Sans', 12)
-        pdf.setFillColorRGB(0, 0, 0)
-        if str(self.ui.txt_payload.text()) == "":
-            pdf.drawString(40, 792 - 590, "Payload: 0 kg")
-        else:
-            pdf.drawString(40, 792 - 590, "Payload: " + str(self.ui.txt_payload.text()) + " kg")
-        if str(self.ui.txt_orientation.text()) == "" or str(self.ui.txt_orientation.text()) == "0":
-            pdf.drawString(40, 792 - 607, "Orientation: Horizontal")
-        elif str(self.ui.txt_orientation.text()) == "90":
-            pdf.drawString(40, 792 - 607, "Orientation: Vertical")
-        else:
-            pdf.drawString(40, 792 - 607, "Orientation: " + str(self.ui.txt_orientation.text()) + " deg")
-        if str(self.ui.txt_ambient_temperature.text()) == "":
-            pdf.drawString(40, 792 - 624, "Ambient Temp: 20 C")
-        else:
-            pdf.drawString(40, 792 - 624, "Ambient Temp: " + str(self.ui.txt_ambient_temperature.text()) + " C")
-        pdf.drawString(40, 792 - 641, "Vacuum?: " + self.ui.cmb_vacuum.currentText())
-        pdf.drawString(40, 792 - 658, "Input Voltage: " + self.ui.cmb_input_voltage.currentText())
-
-        def set_color(pdf, style_sheet):
-            if "color: red" in style_sheet:
-                pdf.setFillColorRGB(1, 0, 0)
-            elif "color: orange" in style_sheet:
-                pdf.setFillColorRGB(1, .64, 0)
-            else:
-                pdf.setFillColorRGB(0, 0, 0)
-            return
-
-        # add results
-        set_color(pdf, self.ui.txt_peak_torque_required.styleSheet())
-        pdf.drawString(250, 792 - 590, "Peak Torque: " + str(self.ui.txt_peak_torque_required.text()))
-        set_color(pdf, self.ui.txt_rms_torque.styleSheet())
-        pdf.drawString(250, 792 - 607, "RMS Torque: " + str(self.ui.txt_rms_torque.text()))
-        set_color(pdf, self.ui.txt_bus_voltage_required.styleSheet())
-        pdf.drawString(250, 792 - 624, "Bus Voltage: " + str(self.ui.txt_bus_voltage_required.text()))
-        set_color(pdf, self.ui.txt_peak_power_output.styleSheet())
-        pdf.drawString(250, 792 - 641, "Peak Power: " + str(self.ui.txt_peak_power_output.text()))
-        set_color(pdf, self.ui.txt_rms_power_output.styleSheet())
-        pdf.drawString(250, 792 - 658, "RMS Power: " + str(self.ui.txt_rms_power_output.text()))
-        set_color(pdf, self.ui.txt_duty_cycle.styleSheet())
-        pdf.drawString(250, 792 - 675, "Duty Cycle: " +
-                       str(round(float(self.ui.txt_duty_cycle.text()
-                                       [:self.ui.txt_duty_cycle.text().find("%")]))) + "%")
-        set_color(pdf, self.ui.txt_peak_motor_speed.styleSheet())
-        pdf.drawString(400, 792 - 590, "Peak Motor Speed: " +
-                       str((self.ui.txt_peak_motor_speed.text()
-                                       )))
-        set_color(pdf, self.ui.txt_peak_current_required.styleSheet())
-        pdf.drawString(400, 792 - 607, "Peak Current: " + str(self.ui.txt_peak_current_required.text()))
-        set_color(pdf, self.ui.txt_rms_current_required.styleSheet())
-        pdf.drawString(400, 792 - 624, "RMS Current: " + str(self.ui.txt_rms_current_required.text()))
-        set_color(pdf, self.ui.txt_final_coil_temperature.styleSheet())
-        pdf.drawString(400, 792 - 641, "Final Coil Temp: " + str(self.ui.txt_final_coil_temperature.text()))
-        set_color(pdf, self.ui.txt_rolling_rms_current.styleSheet())
-        pdf.drawString(400, 792 - 658, "Max Rolling RMS Current: " + str(self.ui.txt_rolling_rms_current.text()))
-        set_color(pdf, self.ui.txt_sto_current.styleSheet())
-        pdf.drawString(400, 792 - 675, "STO Current: " + str(self.ui.txt_sto_current.text()))
-        pdf.setFont('Open Sans', 10)
-        pdf.setFillColorRGB(0, 0, 0)
-        if str(self.ui.txt_error_output.toPlainText()) == "":
-            pdf.drawString(250, 792 - 692, "No errors or warnings.")
-        else:
-            text_object = pdf.beginText(250, 792 - 692)
-            text_object.textLines(str(self.ui.txt_error_output.toPlainText()))
-            pdf.drawText(text_object)
-
-        pdf.showPage()
-        pdf.save()
 
     def open(self, path=None):
         """Opens existing file. Checks if current file is saved.
@@ -2978,9 +2592,6 @@ class App(QtWidgets.QMainWindow):
             cur = con.cursor()
             cur.execute("SELECT * FROM Inputs")
             inputs = cur.fetchone()
-        #print(inputs)
-        # index = self.ui.stage_config_input.findText(inputs[1])
-        #print(inputs[1])
         self.ui.stage_smart_string.setText(inputs[1])
         motor= inputs[2]#.split("-")
         stage = inputs[1].split("-")
@@ -2991,10 +2602,7 @@ class App(QtWidgets.QMainWindow):
                 else:
                     stage[0] = stage[0][:-2]
             self.ui.stage_config_input.setText(stage[0])
-            #self.ui.motor_name.setText(inputs[2])
-            #print(inputs[1])
             motor,motorType,motor_spec_names,motor_spec_vals,stage,stageType,stage_spec_names,stage_spec_vals,stage_config =PopupConfig.return_values(stage =inputs[1])
-            #print(stageType)
             
             self.on_stage_change(stage,stageType,stage_spec_names,stage_spec_vals,stage_config)
             self.on_motor_change(motor)#,motorType,motor_spec_names,motor_spec_vals)
@@ -3003,15 +2611,7 @@ class App(QtWidgets.QMainWindow):
             motor,motorType,motor_spec_names,motor_spec_vals,stage,stageType,stage_spec_names,stage_spec_vals,stage_config =PopupConfig.return_values(stage =inputs[2])
             self.on_motor_change(inputs[2])#,motorType,motor_spec_names,motor_spec_vals)
             self.refresh_plot()
-        #print("stage type: " + stageType)
-        #print(motor)
 
-        #sleep(5)
-        # if index >= 0:
-            # self.ui.stage_config_input.setCurrentIndex(index)
-        # index = self.ui.stage_config_input.findText(inputs[2])
-        # if index >= 0:
-            # self.ui.cmb_motor_select.setCurrentIndex(index)
         index = self.ui.cmb_drive_select.findText(inputs[3])
         if index >= 0:
             self.ui.cmb_drive_select.setCurrentIndex(index)
@@ -3493,43 +3093,27 @@ class App(QtWidgets.QMainWindow):
         else:
             return
   
-    def show_popup_config_dialog(self, config, motor=None, motorType=None, motor_spec_names=None, motor_spec_vals=None, stage=None, stageType=None, stage_spec_names=None, stage_spec_vals=None,stage_config=None):
-        self.clear_results()
-        if config=="stage":
-            if stage == "":
-                print("no stage to configure")
-                return
-            else:
-                motor,motorType,motor_spec_names,motor_spec_vals,stage,stageType,stage_spec_names,stage_spec_vals,stage_config = PopupConfig.return_values(stage = stage)
-                self.file_change()
-                self.model = Model(self)
-                self.ui.list_motion.setModel(self.model)
-                self.ui.list_motion.selectRow(self.model.rowCount()-1)
-                #print(str(stage_spec_vals))
-
+    def show_popup_config_dialog(self, stage=None):
+        print("show_popup_config_dialog")
+        #self.clear_results()
+        if stage == "":
+            print("no stage to configure")
+            return
         else:
-            if self.ui.txt_stage_type != "":
-                if (self.ui.txt_stage_type == "Direct-Drive Linear" and self.getMotorType(self.motor) == "Rotary") or \
-                (self.ui.txt_stage_type=="Direct-Drive Rotary" and self.getMotorType(self.motor) =="Linear") or (self.ui.txt_stage_type=="Screw-Drive Linear" and self.getMotorType(self.motor)=="Linear"): 
-                    msg = QtWidgets.QMessageBox()
-                    msg.setText("Invalid motor stage combination! Please use linear motors with linear stages and rotary motors with rotary stages except for ballscrew stages.")
-                    msg.setWindowTitle("Invalid Entry!")
-                    msg.setIcon(QtWidgets.QMessageBox.Warning)
-                    msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
-                    msg.exec_()
-                    return ""
-                    
-            motor,motorType,motor_spec_names,motor_spec_vals,stage,stageType,stage_spec_names,stage_spec_vals,stage_config = PopupConfig.return_values(stage = self.motor) 
+            # Call return_values and handle the result
+            result = PopupConfig.return_values(stage=stage)
+            print('show_popup_config_dialog result:', result)
+            if not result[0]:  # Check if configuration was canceled
+                print("Configuration canceled. Waiting for user inputs.")
+                return
 
-            self.model = Model(self)
-            self.ui.list_motion.setModel(self.model)
-            self.ui.list_motion.selectRow(self.model.rowCount()-1)
-            self.ui.motor_name.setText(stage_config)   
-            self.on_motor_change(stage_config)
-            self.file_change()
-            self.refresh_plot()
-            return stage_config
-        return stage_spec_vals
+            # Extract configuration values
+            stage_spec_names, stage_spec_vals, smart_string = result
+            #self.file_change()
+            #self.model = Model(self)
+            #self.ui.list_motion.setModel(self.model)
+            #self.ui.list_motion.selectRow(self.model.rowCount()-1)
+        return stage_spec_names, stage_spec_vals, smart_string
 
     def show_spec_display(self,config):
         if config=="stage" and self.ui.stage_smart_string.text()=="":

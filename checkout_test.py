@@ -786,7 +786,6 @@ class stage_checkout():
                         cw_pos = stage_limit_pos
                     elif limit_type == 'Ccw':
                         ccw_pos = stage_limit_pos
-                print(f'CCW: {ccw_pos}, CW: {cw_pos}')
                 # Calculate the midpoint
                 #if cw_pos > ccw_pos:
                 midpoint = (ccw_pos + cw_pos) / 2
@@ -794,7 +793,6 @@ class stage_checkout():
                     #midpoint = (((ccw_pos + cw_pos) / 2) * -1)
                 self.midpoints[axis] = midpoint
                 self.data[f"Axis: {axis}"]["Home Offset"] = midpoint
-                print(f'Midpoint for {axis}: {self.data[f"Axis: {axis}"]["Home Offset"]}')
 
             for axis in self.test_axes:    
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
@@ -1030,7 +1028,7 @@ class stage_checkout():
         time.sleep(2)
         self.marker_to_limit()
         time.sleep(2)
-
+        print(f'Data To Sheet: {self.data}')
         BI = burn_in(self.speed, self.burnin_time, self.secondary_ui, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.specs_dict, self.stations, self.stage_log_file)
         BI.initialize_burnin(self.controller)
         

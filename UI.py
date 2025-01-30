@@ -286,27 +286,6 @@ def UI():
         
         global controller, stage_test
         
-        #controller = a1.Controller.connect()
-        #controller.start()
-        
-        #connected_axes = {}
-        
-        #for axis_index in range(0,11):
-
-            #try:            
-            # Create status item configuration object
-            #status_item_configuration = a1.StatusItemConfiguration()
-                        
-            # Add this axis status word to object
-            #status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
-            
-            # Get axis status word from controller
-            #result = controller.runtime.status.get_status_items(status_item_configuration)
-            #axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
-            
-            # Check NotVirtual bit of axis status word
-            #if (axis_status & 1 << 13) > 0:
-                #connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
         def controller_def():
             ver = tk.Toplevel(input_frame)
             ver.title('Connection Type')
@@ -425,22 +404,22 @@ def UI():
         )
         stage_test.test(controller, reenable_run_button)  
             
-        cleanup_resources()
-        print('Cleaning Up')
+        #cleanup_resources()
+        #print('Cleaning Up')
         return
     
     def cleanup_resources(test=None):
         """
         Cleans up resources such as threads, connections, and resets global states.
         """
-        global test_thread
+        global thread
     
-        if test_thread and test_thread.is_alive():
+        if thread and thread.is_alive():
             try:
-                test_thread.join(timeout=1)
+                thread.join(timeout=1)
             except RuntimeError:
                 pass
-        test_thread = None
+        thread = None
         
         # Clean up rot_cal specific resources
         if test:
@@ -454,22 +433,27 @@ def UI():
 
     def on_scan():
         global specs_dict
-        file_path = r'C:\Users\tbates\Python\automated-checkout-bench\Temp Files\specs.txt'
-        app = QApplication([])
+        #file_path = r'C:\Users\tbates\Python\automated-checkout-bench\Temp Files\specs.txt'
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
         app_instance = App()
-        stage_specs = app_instance.show_popup_config_dialog(config='stage', stage=part_entry.get())
         try:
-            with open(file_path, 'r') as file:
-                for line in file:
-                    # Use regex to split only at the first ':' outside parentheses
-                    match = re.match(r'([^:]+):(.*)', line.strip())
-                    if match:
-                        key = match.group(1).strip()
-                        value = match.group(2).strip()
-                        specs_dict[key] = value if value else None
-        except FileNotFoundError:
-            print("Stage specs file not found. Please re-configure stage.")
-        #print(f'Stage Specs: {specs_dict}')
+            stage_spec_names, stage_spec_vals, smart_string = app_instance.show_popup_config_dialog(stage=part_entry.get())
+        except TypeError:
+            app.quit()
+            return
+        if stage_spec_names and stage_spec_vals:
+            # Create a dictionary by zipping the two lists
+            specs_dict = dict(zip(stage_spec_names, stage_spec_vals))
+            print(f"Specifications Dictionary: {specs_dict}")
+            print(f"Smart String: {smart_string}")
+        else:
+            print("No stage specifications found.")
+
+        app_instance.deleteLater()  # Close the App instance
+        del app_instance      # Ensure the instance is deleted
+        app.quit()            # Quit the QApplication
 
     def time_def():
         global BI_state
@@ -542,7 +526,7 @@ def UI():
     default = tk.Radiobutton(master=input_frame, text="Default", variable=time_var, value="default", command=time_def)
     default.grid(row=input_frame.cycles_row, column=1, padx=5, pady=5)
     
-    other = tk.Radiobutton(master=input_frame, text="Other", variable=time_var, value="other", command=time_def)
+    other = tk.Radiobutton(master=input_frame, text="Other (Hours)", variable=time_var, value="other", command=time_def)
     other.grid(row=input_frame.cycles_row, column=2, padx=5, pady=5)
     
     var_time = tk.IntVar(value=0)
