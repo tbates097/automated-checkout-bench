@@ -23,17 +23,18 @@ sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults
 from sheets_update import Sheets
+from RedirectStdout import RedirectStdout
 
-class hex_strut_checkout():
+class stage_checkout():
     '''
     This program is intended to take a complete set of hexapod struts through an automated check-out procedure.
     '''
-    def __init__(self, hex_type, encoder, speed, burnin_time, job, op, comments, text_widget, window, connected_axes, duty_cycle, **kwargs):
+    def __init__(self, stage_type, speed, burnin_time, job, op, comments, secondary_ui, window, num_axes, test_axes, duty_cycle, specs_dict, absolute, stations, **kwargs):
         """
         Initialization method for the hex_strut_checkout class.
 
         Parameters:
-            hex_type (str): The type of hexapod being checked out (e.g. 'HEX300-230HL', 'HEX500-350HL', etc.)
+            stage_type (str): The type of hexapod being checked out
             encoder (str): The type of encoder being used (e.g. 'E1', 'E2', etc.)
             speed (int): The speed at which the struts will move during the check-out (in mm/s)
             burnin_time (int): The length of time the struts will run during the check-out (in hours)
@@ -46,27 +47,92 @@ class hex_strut_checkout():
             duty_cycle (int): The percentage of the time the struts will be moving during the check-out
             **kwargs: Any additional keyword arguments
         """
-        self.hex_type = hex_type
-        self.encoder = encoder
+        self.stage_type = stage_type
         self.speed = speed
         self.burnin_time = burnin_time
         self.job = job
         self.op = op
         self.comments = comments
-        self.text_widget = text_widget
+        self.secondary_ui = secondary_ui
         self.window = window
-        self.connected_axes = connected_axes
+        self.num_axes = num_axes
+        self.test_axes = test_axes
         self.duty_cycle = duty_cycle
+        self.specs_dict = specs_dict
+        self.absolute = absolute
+        self.stations = stations
         
         self.sample_rate = 1000
         
-        self.text_logger = TextLogger(text_widget)
-        sys.stdout = self.text_logger
+        self.station_loggers = {}
+        for station_id in self.stations:
+            station_widget = self.secondary_ui.station_widgets.get(station_id)
+            if station_widget:
+                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
 
+        # Define a mapping between axis names and station IDs
+        self.axis_to_station_map = {
+            'ST01': 1,
+            'ST02': 2,
+            'ST03': 3,
+            'ST04': 4,
+            'ST05': 5,
+            'ST06': 6,
+            'ST07': 7,
+            'ST08': 8,
+            'ST09': 9,
+            'ST10': 10
+            # Add more mappings as needed
+        }
         
         self.window = tk.Tk()
         self.window.withdraw()
         
+    def station_print(self, message, station_id=None):
+        """
+        Print a message to a specific station's text_widget or all stations.
+
+        Parameters:
+            message (str): The message to display.
+            station_id (int or None): The ID of the station to print to.
+                                      If None, print to all allocated stations.
+        """
+        #print(f'Station ID: {station_id}')
+        if station_id is None:  # Print to all stations
+            for sid, logger in self.station_loggers.items():
+                logger.write(message + "\n")
+        elif station_id in self.station_loggers:  # Print to a specific station
+            self.station_loggers[station_id].write(message + "\n")
+        else:
+            print(f"[Warning] Invalid station_id {station_id}. Message: {message}")
+
+    def reset_stdout(self):
+        """
+        Reset sys.stdout to its original value.
+        """
+        sys.stdout = sys.__stdout__
+    def get_limit_dec(self, axis, limit=None):
+            # Retrieve the current configuration for the axis
+            electrical_limits = self.controller.runtime.parameters.axes[axis].protection.faultmask
+            electrical_limit_value = int(electrical_limits.value)
+
+            # Define bit positions for each limit
+            CCW_SOFTWARE_LIMIT = 5
+            CW_SOFTWARE_LIMIT = 4
+            CCW_ELECTRICAL_LIMIT = 3
+            CW_ELECTRICAL_LIMIT = 2
+
+            # Toggle limits
+            if limit == 'software on':
+                electrical_limit_value |= (1 << CCW_SOFTWARE_LIMIT) | (1 << CW_SOFTWARE_LIMIT)
+            elif limit == 'software off':
+                electrical_limit_value &= ~((1 << CCW_SOFTWARE_LIMIT) | (1 << CW_SOFTWARE_LIMIT))
+            elif limit == 'electrical on':
+                electrical_limit_value |= (1 << CCW_ELECTRICAL_LIMIT) | (1 << CW_ELECTRICAL_LIMIT)
+            elif limit == 'electrical off':
+                electrical_limit_value &= ~((1 << CCW_ELECTRICAL_LIMIT) | (1 << CW_ELECTRICAL_LIMIT))
+
+            return electrical_limit_value
     def test(self, controller: a1.Controller, reenable_run_button):
         """
         This method is the main entry point for the hexapod check-out process.
@@ -75,9 +141,10 @@ class hex_strut_checkout():
             controller (a1.Controller): The Aerotech controller object
             reenable_run_button (Callable): A callable to re-enable the "Run" button in the GUI
         """
-        self.data = {}
+        self.station_print(f"Starting test for {self.job}.")
 
-        for axis in self.connected_axes:
+        self.data = {}
+        for axis in self.test_axes:
             self.data[f"Axis: {axis}"] = {
                 "Testing Technician": "",
                 "Date of Testing": "",
@@ -94,9 +161,8 @@ class hex_strut_checkout():
         self.controller = controller
         self.reenable_run_button = reenable_run_button
         self.init_logger()
-        self.init_specs()
-        self.fault_log.info(f'Hexapod Model: {self.hex_type}\nSerial Number: {self.job}\n')
-        self.strut_info.info(f'Hexapod Model: {self.hex_type}\nSerial Number: {self.job}\n')
+        self.fault_log.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
+        self.stage_info.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
         
         # Initialize the lists of commands for each axis
         self.list_commands_ccw_pos = []
@@ -106,60 +172,87 @@ class hex_strut_checkout():
         self.list_low_velocity = []
         
         # Set the nominal positions and velocities for each axis
-        for axis in self.connected_axes:
-            self.list_commands_ccw_pos.append(self.param_dict.get('nominal_ccw_pos'))
-            self.list_commands_cw_pos.append(self.param_dict.get('nominal_cw_pos'))
+        for axis in self.test_axes:
+            self.list_commands_ccw_pos.append((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) * -1)
+            self.list_commands_cw_pos.append(float(self.specs_dict.get('NominalTravel').split()[0]) / 2)
             self.list_commands_zero.append(0)
-            self.list_velocity.append(5)
+            self.list_velocity.append(self.speed)
             self.list_low_velocity.append(0.5)
-            
         # Set up the motion target mode to Absolute
         #self.controller.runtime.commands.motion_setup.setuptasktargetmode(a1.TargetMode.Absolute)
 
-        # Set the home offset and fault mask based on the encoder type
-        if self.encoder == 'E1' or self.encoder == 'E3':
-            self.params(self.nominal_home_offset, self.max_current_clamp,self.param_dict.get('fault_mask_elec_limits_on'))
-        else:
-            nominal_home_offset = 0
-            self.params(nominal_home_offset, self.max_current_clamp,self.param_dict.get('fault_mask_all_limits_off'))
+        #time.sleep(60)
+        self.zero_home_offset = 0
+        self.max_current_clamp = 10
+        self.low_current_clamp = 3.5
+        self.nominal_travel = float(self.specs_dict.get('NominalTravel').split()[0])
+
+        for axis in self.test_axes:
+            # Set the home offset and fault mask based on the encoder type
+            if self.absolute:
+                self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
+            else:
+                self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
         
         # Wait for the controller to finish processing the previous commands
         time.sleep(2)
-        self.enable_struts()
+        self.enable_stages()
         time.sleep(5)
 
-    def params(self, home_offset, current_clamp, limits):
+    def params(self, axis, home_offset=None, current_clamp=None, limit=None):
         """
         Configure parameters for each connected axis on the controller.
 
         Args:
             home_offset (int or dict): The home offset value(s) for the axes.
             current_clamp (float): The maximum current clamp value.
-            limits (int): The fault mask limits.
-
+            limit (str): The fault mask limits (e.g., 'software on', 'software off').
         """
-        for axis in self.connected_axes:
-            # Retrieve current configuration parameters for the axis
-            configured_parameters = self.controller.configuration.parameters.get_configuration()
-            
-            # Set home offset based on encoder type
-            if self.encoder == 'E1' or self.encoder == 'E3':
-                configured_parameters.axes[axis].homing.homeoffset.value = home_offset
-            else:
-                # Check if home_offset is an integer or needs to be accessed by axis
+        def toggle_limits(limit, axis):
+            # Retrieve the current configuration for the axis
+            electrical_limits = self.controller.runtime.parameters.axes[axis].protection.faultmask
+            electrical_limit_value = int(electrical_limits.value)
+
+            # Define bit positions for each limit
+            CCW_SOFTWARE_LIMIT = 5
+            CW_SOFTWARE_LIMIT = 4
+            CCW_ELECTRICAL_LIMIT = 3
+            CW_ELECTRICAL_LIMIT = 2
+
+            # Toggle limits
+            if limit == 'software on':
+                electrical_limit_value |= (1 << CCW_SOFTWARE_LIMIT) | (1 << CW_SOFTWARE_LIMIT)
+            elif limit == 'software off':
+                electrical_limit_value &= ~((1 << CCW_SOFTWARE_LIMIT) | (1 << CW_SOFTWARE_LIMIT))
+            elif limit == 'electrical on':
+                electrical_limit_value |= (1 << CCW_ELECTRICAL_LIMIT) | (1 << CW_ELECTRICAL_LIMIT)
+            elif limit == 'electrical off':
+                electrical_limit_value &= ~((1 << CCW_ELECTRICAL_LIMIT) | (1 << CW_ELECTRICAL_LIMIT))
+
+            return electrical_limit_value
+        
+        #for axis in self.test_axes:
+        # Retrieve current configuration parameters for the axis
+        configured_parameters = self.controller.configuration.parameters.get_configuration()
+        if home_offset:
+            if self.absolute:
                 if isinstance(home_offset, int):
                     configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset
                 else:
                     configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset[axis]
-            
-            # Set other protection parameters
+            else:
+                configured_parameters.axes[axis].homing.homeoffset.value = home_offset
+        if current_clamp:
             configured_parameters.axes[axis].protection.limitdebouncedistance.value = 1
             configured_parameters.axes[axis].protection.maxcurrentclamp.value = current_clamp
-            configured_parameters.axes[axis].protection.faultmask.value = limits
-            
-            # Apply the new configuration to the controller
-            self.controller.configuration.parameters.set_configuration(configured_parameters)
-        
+
+        if limit:
+            electrical_limit_value = toggle_limits(limit, axis)
+            configured_parameters.axes[axis].protection.faultmask.value = electrical_limit_value
+
+        # Apply the updated configuration for each axis
+        self.controller.configuration.parameters.set_configuration(configured_parameters)
+
         # Reset the controller to apply changes
         self.controller.reset()
         time.sleep(10)  # Wait for the controller to initialize
@@ -174,7 +267,7 @@ class hex_strut_checkout():
         faults = {}  # Initialize an empty dictionary to store results per axis
         
         # Loop through each connected axis
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             # Create a status item configuration to retrieve the axis fault status
             status_item_configuration = a1.StatusItemConfiguration()
             status_item_configuration.axis.add(a1.AxisStatusItem.AxisFault, axis)
@@ -199,41 +292,75 @@ class hex_strut_checkout():
             faults_per_axis (dict): A dictionary of the axis faults, where the key is the axis name and the value is the fault.
             reenable_run_button (Callable): A callable to re-enable the "Run" button in the GUI
         """
-        fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+        fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
         decoded_faults = fault_init.get_fault()
         
         # Create a copy of the connected_axes list to safely remove unused axes
-        updated_connected_axes = list(self.connected_axes)
+        updated_connected_axes = list(self.test_axes)
         for axis, faults in decoded_faults.items():
+            station_id = self.axis_to_station_map.get(axis)
             if test == 'hardstop and limit check':
                 if faults:
                     # Exclude 'CwEndOfTravelLimitFault' and 'CcwEndOfTravelLimitFault' during limit checks
                     filtered_faults = [fault for fault in faults if fault not in ['CwEndOfTravelLimitFault', 'CcwEndOfTravelLimitFault']]
                     
                     if filtered_faults:  # If there are any faults other than the excluded ones
-                        confirm = messagebox.askyesno(
-                            'An Axis Fault Occurred',
-                            f'Axis {axis} has the following faults: {filtered_faults}. Would you like to continue?'
-                        )
-                        
-                        if confirm:
-                            # Continue and remove the axis from connected_axes
-                            print('Continuing the test and removing affected axis.')
-                            if axis in updated_connected_axes:
-                                updated_connected_axes.remove(axis)
-                        else:
-                            # Re-enable the "Run" button and stop further execution
-                            print(f'Axis {axis} requires attention for the following faults: {faults}.')
-                            reenable_run_button()  # Call the callback to re-enable the button
-                            sys.exit()
+                        for fault in filtered_faults:
+                            if fault in ['CwSoftwareLimitFault', 'CcwSoftwareLimitFault']:
+                                confirm = messagebox.askyesno(
+                                    'An Axis Fault Occurred',
+                                    f'Axis {axis} has the following faults: {filtered_faults}. Would you like to turn off software limits?'
+                                )
+                                if confirm:
+                                    # Continue and remove the axis from connected_axes
+                                    self.station_print('Turning off software limits and resuming test.', station_id=station_id)
+                                    self.params(axis, limit='software off')
+                                    self.home_stages()
+                                    self.check_hardstop()
+                                else:
+                                    reenable_run_button()  # Call the callback to re-enable the button
+                                    sys.exit()
+                            else:
+                                confirm = messagebox.askyesno(
+                                    'An Axis Fault Occurred',
+                                    f'Axis {axis} has the following faults: {filtered_faults}. Would you like to remove these axes and continue?'
+                                )
+                                self.station_print(f'Axis {axis} has the following faults: {filtered_faults}', station_id=station_id)
+                            
+                                if confirm:
+                                    # Continue and remove the axis from connected_axes
+                                    print('Continuing the test and removing affected axis.')
+                                    if axis in updated_connected_axes:
+                                        updated_connected_axes.remove(axis)
+                                else:
+                                    # Re-enable the "Run" button and stop further execution
+                                    self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
+                                    reenable_run_button()  # Call the callback to re-enable the button
+                                    sys.exit()
             else:
                 if faults:
-                    # Display warning message with axis and its faults
+                    for fault in faults:
+                        if fault in ['CwSoftwareLimitFault', 'CcwSoftwareLimitFault']:
+                            confirm = messagebox.askyesno(
+                                'An Axis Fault Occurred',
+                                f'Axis {axis} has the following fault: {fault}. Would you like to turn off software limits?'
+                            )
+                            if confirm:
+                                # Continue and remove the axis from connected_axes
+                                self.station_print('Turning off software limits and resuming test.', station_id=station_id)
+                                self.params(axis, limit='software off')
+                                self.home_stages()
+                                self.check_hardstop()
+                            else:
+                                reenable_run_button()  # Call the callback to re-enable the button
+                                sys.exit()
+                    
                     confirm = messagebox.askyesno(
                         'An Axis Fault Occurred',
-                        f'Axis {axis} has the following faults: {faults}. Would you like to continue?'
+                        f'Axis {axis} has the following faults: {faults}. Would you like to remove these axes and continue?'
                     )
-                    
+                    self.station_print(f'Axis {axis} has the following faults: {faults}', station_id=station_id)
+                
                     if confirm:
                         # Continue and remove the axis from connected_axes
                         print('Continuing the test and removing affected axis.')
@@ -241,12 +368,12 @@ class hex_strut_checkout():
                             updated_connected_axes.remove(axis)
                     else:
                         # Re-enable the "Run" button and stop further execution
-                        print(f'Axis {axis} requires attention for the following faults: {faults}.')
+                        self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
                         reenable_run_button()  # Call the callback to re-enable the button
                         sys.exit()
                     
         # Update the connected_axes with the updated list
-        self.connected_axes = updated_connected_axes
+        self.test_axes = updated_connected_axes
         
         # Update the commands for the remaining axes
         self.list_commands_ccw_pos = []
@@ -254,15 +381,15 @@ class hex_strut_checkout():
         self.list_commands_zero = []
         self.list_velocity = []
         self.list_low_velocity = []
-        for axis in self.connected_axes:
-            self.list_commands_ccw_pos.append(self.param_dict.get('nominal_ccw_pos'))
-            self.list_commands_cw_pos.append(self.param_dict.get('nominal_cw_pos'))
+        for axis in self.test_axes:
+            self.list_commands_ccw_pos.append((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) * -1)
+            self.list_commands_cw_pos.append(float(self.specs_dict.get('NominalTravel').split()[0]) / 2)
             self.list_commands_zero.append(0)
-            self.list_velocity.append(5)
+            self.list_velocity.append(self.speed)
             self.list_low_velocity.append(0.5)
             
            
-    def enable_struts(self):
+    def enable_stages(self):
         """
         Enable the struts and handle any axis faults that may occur during enable.
 
@@ -270,15 +397,15 @@ class hex_strut_checkout():
         during enable. If an axis fault occurs, it will be handled by removing the
         axis from the connected_axes list and continue with the remaining axes.
 
-        If the hexapod type is HEX150-125HL or HEX150-140HL, the home_struts method
+        If the hexapod type is HEX150-125HL or HEX150-140HL, the home_stages method
         will be called to home the struts before checking the hardstops.
         """
-        print('Enabling Axes')
+        self.station_print('Enabling Axes')
         try:
-            self.controller.runtime.commands.motion.enable(self.connected_axes)
+            self.controller.runtime.commands.motion.enable(self.test_axes)
             time.sleep(0.5)
             self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-            self.controller.runtime.commands.motion.enable(self.connected_axes)
+            self.controller.runtime.commands.motion.enable(self.test_axes)
             
         except (ControllerAxisFaultException, ControllerOperationException):
             # Handle the axis fault exception
@@ -287,13 +414,14 @@ class hex_strut_checkout():
             
             faults_per_axis = self.check_for_faults()
         
-            fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+            fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
             decoded_faults = fault_init.get_fault()
         
             # Create a copy of the connected_axes list to safely remove unused axes
-            updated_connected_axes = list(self.connected_axes)
+            updated_connected_axes = list(self.test_axes)
         
             for axis, faults in decoded_faults.items():
+                station_id = self.axis_to_station_map.get(axis)
                 # Check if specific faults are present
                 if 'FeedbackInput0Fault' in faults or 'FeedbackInput1Fault' in faults:
                     # Display warning message with axis and its faults
@@ -306,51 +434,44 @@ class hex_strut_checkout():
                         # Remove axis from the connected_axes list
                         if axis in updated_connected_axes:
                             updated_connected_axes.remove(axis)
-                            print(f'Axis {axis} removed from connected axes as it is unused.')
+                            self.station_print(f'Axis {axis} removed from connected axes as it is unused.', station_id=station_id)
                     else:
                         # Handle case where axis is in use
-                        print(f'Axis {axis} requires attention for the following faults: {faults}.')
+                        self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
                         self.reenable_run_button()  # Call the callback to re-enable the button
                         sys.exit()
                     
             # Update the connected_axes with the updated list
-            self.connected_axes = updated_connected_axes
+            self.test_axes = updated_connected_axes
             
             self.list_commands_ccw_pos = []
             self.list_commands_cw_pos = []
             self.list_velocity = []
-            for axis in self.connected_axes:
-                self.list_commands_ccw_pos.append(self.param_dict.get('nominal_ccw_pos'))
-                self.list_commands_cw_pos.append(self.param_dict.get('nominal_cw_pos'))
+            for axis in self.test_axes:
+                self.list_commands_ccw_pos.append((self.specs_dict.get('NominalTravel').split()[0] / 2) * -1)
+                self.list_commands_cw_pos.append(self.specs_dict.get('NominalTravel').split()[0] / 2)
                 self.list_velocity.append(5)
             
             try:
-                self.controller.runtime.commands.motion.enable(self.connected_axes)
+                self.controller.runtime.commands.motion.enable(self.test_axes)
                 
             except (ControllerAxisFaultException, ControllerOperationException):
                 # Handle the axis fault exception
                 error_message = "Axis fault occurred during enable."
-                print(error_message)
+                self.station_print(error_message, station_id=station_id)
                 messagebox.showerror("Axis Fault", error_message)
                 
                 time.sleep(3)
                 
                 faults_per_axis = self.check_for_faults()
             
-                fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+                fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
                 decoded_faults = fault_init.get_fault()
                 sys.exit()
-       
-        if self.hex_type != 'HEX150-125HL' and self.hex_type != 'HEX150-140HL':
-            self.check_halls()
-            time.sleep(5)
-        else:
-            self.home_struts()
-            time.sleep(1)
-            
-            self.check_hardstop()
-            time.sleep(5)
-    
+
+        self.check_halls()
+        time.sleep(5)
+        
     def rotate_to_match_start(self, observed, expected):
         """
         Rotate the observed list so that it starts with the same state as the expected list.
@@ -373,19 +494,23 @@ class hex_strut_checkout():
         # Convert deque back to list and return
         return list(observed_deque)
 
-    def check_halls(self):
+    def check_halls(self, retry=False):
         """
         Check the hall sensor sequence for each axis, comparing it to the expected sequence based on the encoder direction.
         """
-        print('Checking Halls')
-        hall_check_step = 0.5
-        hall_check_vel = 0.05
+        self.station_print('Checking Halls')
+        hall_check_step = 50
+        hall_check_vel = 5
     
         test_time = hall_check_step / hall_check_vel
         n = int(self.sample_rate * test_time)
         freq = a1.DataCollectionFrequency.Frequency1kHz
     
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
+            self.controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+            time.sleep(2)
+            self.controller.runtime.commands.motion.waitformotiondone([axis], 1)
+            station_id = self.axis_to_station_map.get(axis)
             hall_status = []
             encoder_values = []
             
@@ -402,7 +527,7 @@ class hex_strut_checkout():
                 error_message = "Axis fault occurred during enable. Check fault log"
                 faults_per_axis = self.check_for_faults()
             
-                fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+                fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
                 decoded_faults = fault_init.get_fault()
                 
                 self.fault_log.info(f'A fault occured on {axis}: {decoded_faults}')
@@ -411,12 +536,12 @@ class hex_strut_checkout():
                 sys.exit()
                 
             time.sleep(test_time)
-            
+
             self.controller.runtime.commands.motion.waitformotiondone([axis], 1)
             
             time.sleep(1)
             results = self.controller.runtime.data_collection.get_results(data_config, n)
-    
+            
             self.populate(axis, results)
     
             # Zip the three hall lists together and group them as (c, a, b)
@@ -452,34 +577,47 @@ class hex_strut_checkout():
                 hall_order_valid = rotated_hall_states == expected_order_ccw
            
             if len(rotated_hall_states) < 6:
-                self.strut_info.info(f"A fault occured on {axis}. Not all hall states seen.")
+                self.station_print(f'Not all hall states seen on axis {axis}', station_id=station_id)
+                self.stage_info.info(f"A fault occured on {axis}. Not all hall states seen.")
             else:    
-                self.strut_info.info(f"Hall Cycle for {axis}: {rotated_hall_states}")
-                self.strut_info.info(f"Encoder Points for {axis}: {unique_encoder_values}")
+                self.stage_info.info(f"Hall Cycle for {axis}: {rotated_hall_states}")
+                self.stage_info.info(f"Encoder Points for {axis}: {unique_encoder_values}")
                 # Output results
                 if hall_order_valid:
-                    self.strut_info.info(f"Axis {axis}: Hall states match the expected order for {encoder_direction} encoder movement.")
+                    self.station_print(f'Hall sequence passed for axis {axis}', station_id=station_id)
+                    self.stage_info.info(f"Axis {axis}: Hall states match the expected order for {encoder_direction} encoder movement.")
                     self.data[f"Axis: {axis}"]["Halls"] = "Passed"
                 else:
-                    self.strut_info.info(f"Axis {axis}: Hall states do NOT match the expected order for {encoder_direction} encoder movement. Observed: {unique_hall_states}")
-                    print(f'Halls sequence for {axis} does not match encoder direction. Physically check motor direction (Cw) against hall sequence to verify. Potential issues include halls, encoder, or limits (linear motor).')
+                    self.stage_info.info(f"Axis {axis}: Hall states do NOT match the expected order for {encoder_direction} encoder movement. Observed: {unique_hall_states}")
+                    self.station_print(f'Halls sequence for {axis} does not match encoder direction. Physically check motor direction (Cw) against hall sequence to verify. Potential issues include halls, encoder, or limits (linear motor).', station_id=station_id)
+                    confirm = messagebox.askyesno(
+                        'Halls',
+                        f'Hall states do NOT match the expected order. Does this stage have halls?'
+                    )
         
+                    if confirm:
+                        self.station_print(f'Please address potential motor issue', station_id=station_id)
+                        self.reenable_run_button()  # Call the callback to re-enable the button
+                        sys.exit()
+                    else:
+                        pass
+                        
                 # Check if the encoder direction and hall states are consistent
                 if encoder_direction == "positive" and hall_order_valid:
-                    self.strut_info.info(f"Axis {axis} is moving in the expected clockwise direction.")
+                    self.stage_info.info(f"Axis {axis} is moving in the expected clockwise direction.")
                 elif encoder_direction == "negative" and hall_order_valid:
-                    self.strut_info.info(f"Axis {axis} is moving in the expected counter-clockwise direction.")
+                    self.stage_info.info(f"Axis {axis} is moving in the expected counter-clockwise direction.")
                 else:
-                    print(f"Axis {axis} has an unexpected hall state sequence or encoder direction.")
+                    self.station_print(f"Axis {axis} has an unexpected hall state sequence or encoder direction.", station_id=station_id)
                     
                 try:
-                    self.controller.runtime.commands.motion.moveincremental([axis], [-hall_check_step], [5])
+                    self.controller.runtime.commands.motion.moveincremental([axis], [-(hall_check_step/2)], [5])
                 except (ControllerAxisFaultException, ControllerOperationException):
                     # Handle the axis fault exception
                     error_message = "Axis fault occurred during enable."
                     faults_per_axis = self.check_for_faults()
                 
-                    fault_init = decode_faults(faults_per_axis, self.connected_axes, self.controller, self.fault_log)
+                    fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
                     decoded_faults = fault_init.get_fault()
                     
                     self.fault_log.info(f'A fault occured on {axis}: {decoded_faults}')
@@ -493,23 +631,21 @@ class hex_strut_checkout():
         
                 time.sleep(3)
         
-        if self.encoder == 'E1' or self.encoder == 'E3':
-            self.home_struts()
-            time.sleep(1)
-            
-        if self.encoder == 'E1':
-            self.check_hardstop()
-            time.sleep(5)
-        else:
+        if self.absolute:
             self.absolute_hardstop()
             time.sleep(1)
+        else:
+            self.home_stages()
+            time.sleep(5)
+            self.check_hardstop()
+            time.sleep(5)
     
     def absolute_hardstop(self):
         """
         This function checks the hardstop travels for all connected axes and then
         calculates the absolute home offset for each axis.
         """
-        print('Checking Hardstop Travels')
+        self.station_print('Checking Hardstop Travels')
         self.abs_ccw_positions = {}
         self.abs_cw_positions = {}
         test = 'absolute hardstop check'
@@ -528,49 +664,36 @@ class hex_strut_checkout():
                     faults_per_axis = self.check_for_faults()
                     if faults_per_axis:
                         self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        self.controller.runtime.commands.motion.enable(self.connected_axes)
+                        self.controller.runtime.commands.motion.enable(self.test_axes)
                     time.sleep(2)
                 if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
+                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.', station_id=station_id)
                     break
                     
-        for axis in self.connected_axes:            
+        for axis in self.test_axes:            
             self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.low_current_clamp
         
-        if self.hex_type == 'HEX300-230HL':
-            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.connected_axes, self.list_low_velocity))
-        else:
-            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.connected_axes, [-i for i in self.list_low_velocity]))
+        attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.test_axes, [-i for i in self.list_low_velocity]))
         time.sleep(3)
         try:
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
         except ControllerAxisFaultException:
             # Explicitly check for faults after moveabsolute
             faults_per_axis = self.check_for_faults()  # Check for faults
             if faults_per_axis:
                 self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
                 
-        for axis in self.connected_axes:
-            if self.hex_type == 'HEX300-230HL':
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [0.5]))
-                try:
-                    self.controller.runtime.commands.motion.waitformotiondone(axis)
-                except ControllerAxisFaultException:
-                    # Explicitly check for faults after moveabsolute
-                    faults_per_axis = self.check_for_faults()  # Check for faults
-                    if faults_per_axis:
-                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        self.controller.runtime.commands.motion.enable(axis)
-            else:
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [-0.5]))
-                try:
-                    self.controller.runtime.commands.motion.waitformotiondone(axis)
-                except ControllerAxisFaultException:
-                    # Explicitly check for faults after moveabsolute
-                    faults_per_axis = self.check_for_faults()  # Check for faults
-                    if faults_per_axis:
-                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        self.controller.runtime.commands.motion.enable(axis)
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [-0.5]))
+            try:
+                self.controller.runtime.commands.motion.waitformotiondone(axis)
+            except ControllerAxisFaultException:
+                # Explicitly check for faults after moveabsolute
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.controller.runtime.commands.motion.enable(axis)
                         
             # Validate limit to hardstop distance.
             status_item_configuration = a1.StatusItemConfiguration()
@@ -578,46 +701,33 @@ class hex_strut_checkout():
             self.results = self.controller.runtime.status.get_status_items(status_item_configuration)
             ccw_pos_fbk = self.results.axis.get(a1.AxisStatusItem.PositionFeedback, axis).value
             
-            self.strut_info.info(f'Ccw Hardstop position for {axis} is {ccw_pos_fbk}')
+            self.stage_info.info(f'Ccw Hardstop position for {axis} is {ccw_pos_fbk}')
 
             self.data[f"Axis: {axis}"]["Absolute value at CCW EOT"] = ccw_pos_fbk
             
             self.abs_ccw_positions[axis] = ccw_pos_fbk
         
-        if self.hex_type == 'HEX300-230HL':
-            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.connected_axes, [-i for i  in self.list_low_velocity]))
-        else:
-            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.connected_axes, self.list_low_velocity))
+        attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun(self.test_axes, self.list_low_velocity))
         time.sleep(3)
         try:
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
         except ControllerAxisFaultException:
             # Explicitly check for faults after moveabsolute
             faults_per_axis = self.check_for_faults()  # Check for faults
             if faults_per_axis:
                 self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
                 
-        for axis in self.connected_axes:
-            if self.hex_type == 'HEX300-230HL':
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [-0.5]))
-                try:
-                    self.controller.runtime.commands.motion.waitformotiondone(axis)
-                except ControllerAxisFaultException:
-                    # Explicitly check for faults after moveabsolute
-                    faults_per_axis = self.check_for_faults()  # Check for faults
-                    if faults_per_axis:
-                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        self.controller.runtime.commands.motion.enable(axis)
-            else:
-                attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [0.5]))
-                try:
-                    self.controller.runtime.commands.motion.waitformotiondone(axis)
-                except ControllerAxisFaultException:
-                    # Explicitly check for faults after moveabsolute
-                    faults_per_axis = self.check_for_faults()  # Check for faults
-                    if faults_per_axis:
-                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        self.controller.runtime.commands.motion.enable(axis)
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [0.5]))
+            try:
+                self.controller.runtime.commands.motion.waitformotiondone(axis)
+            except ControllerAxisFaultException:
+                # Explicitly check for faults after moveabsolute
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.controller.runtime.commands.motion.enable(axis)
                 
             # Validate limit to hardstop distance.
             status_item_configuration = a1.StatusItemConfiguration()
@@ -625,12 +735,12 @@ class hex_strut_checkout():
             self.results = self.controller.runtime.status.get_status_items(status_item_configuration)
             cw_pos_fbk = self.results.axis.get(a1.AxisStatusItem.PositionFeedback, axis).value
             
-            self.strut_info.info(f'Cw Hardstop position for {axis} is {cw_pos_fbk}')
+            self.stage_info.info(f'Cw Hardstop position for {axis} is {cw_pos_fbk}')
             
             self.abs_cw_positions[axis] = cw_pos_fbk
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
                 travel = (abs(self.abs_ccw_positions[axis]) - abs(self.abs_cw_positions[axis]))
-                self.strut_info.info(f'Total travel for {axis} is {travel}')
+                self.stage_info.info(f'Total travel for {axis} is {travel}')
         self.calculate_home_offset()
         
     def calculate_home_offset(self):
@@ -638,11 +748,11 @@ class hex_strut_checkout():
         Calculate the absolute feedback offset for each axis by averaging the CW and CCW hardstop positions.
         Set the absolute feedback offset for each axis using the calculated midpoints.
         """
-        print('Calculating Absolute Offset')
+        self.station_print('Calculating Offset')
         # Initialize a new dictionary to store midpoints
         self.midpoints = {}
         
-        if self.encoder == 'E2':
+        if self.absolute:
             # Iterate over each axis in the positions dictionaries
             for axis in self.abs_ccw_positions:
                 ccw_pos = self.abs_ccw_positions[axis]
@@ -657,52 +767,43 @@ class hex_strut_checkout():
                     midpoint = (midpoint * cpu) * -1
                 else:
                     midpoint = midpoint * cpu
-
-                if self.hex_type == 'HEX300-230HL':
-                    self.midpoints[axis] = midpoint * -1
-                else:
-                    self.midpoints[axis] = midpoint
-
-                self.strut_info.info(f'The absolute feedback offset for {axis} is {midpoint}')
-
+                self.midpoints[axis] = midpoint
+                self.stage_info.info(f'The absolute feedback offset for {axis} is {midpoint}')
+                self.data[f"Axis: {axis}"]["Absolute Position Offset"] = midpoint
             # Optional: Print or log the midpoints to verify
             #print("Midpoints for each axis:", self.midpoints)
 
-            #for axis in self.connected_axes:
+            #for axis in self.test_axes:
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
                 # Following 4 lines along with reset command physically change the values in the active MCD
-                configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = self.midpoints[axis]
+                configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = midpoint
                 configured_parameters.axes[axis].protection.maxcurrentclamp.value = self.max_current_clamp
                 self.controller.configuration.parameters.set_configuration(configured_parameters)
-                
-                self.data[f"Axis: {axis}"]["Absolute Position Offset"] = self.midpoints[axis]
         else:
             for axis, limits in self.limit_pos.items():
-                for limit_type, strut_limit_pos in limits.items():
-                    if limit_type == 'cw':
-                        cw_pos = strut_limit_pos
-                    elif limit_type == 'ccw':
-                        ccw_pos = strut_limit_pos
-
+                for limit_type, stage_limit_pos in limits.items():
+                    if limit_type == 'Cw':
+                        cw_pos = stage_limit_pos
+                    elif limit_type == 'Ccw':
+                        ccw_pos = stage_limit_pos
                 # Calculate the midpoint
+                #if cw_pos > ccw_pos:
                 midpoint = (ccw_pos + cw_pos) / 2
+                #else:
+                    #midpoint = (((ccw_pos + cw_pos) / 2) * -1)
+                self.midpoints[axis] = midpoint
+                self.data[f"Axis: {axis}"]["Home Offset"] = midpoint
 
-                if self.hex_type == 'HEX300-230HL':
-                    self.midpoints[axis] = midpoint * -1
-                else:
-                    self.midpoints[axis] = midpoint
-
+            for axis in self.test_axes:    
                 configured_parameters = self.controller.configuration.parameters.get_configuration()
                 # Following 4 lines along with reset command physically change the values in the active MCD
                 configured_parameters.axes[axis].homing.homeoffset.value = self.midpoints[axis]
                 self.controller.configuration.parameters.set_configuration(configured_parameters)
 
-                self.data[f"Axis: {axis}"]["Home Offset"] = self.midpoints[axis]
-
         self.controller.reset()
         time.sleep(10)
 
-        self.controller.runtime.commands.motion.enable(self.connected_axes)
+        self.controller.runtime.commands.motion.enable(self.test_axes)
 
         time.sleep(2)
 
@@ -717,49 +818,45 @@ class hex_strut_checkout():
         After setting the limits, the function resets the controller to apply changes
         and re-enables the axes. It also initializes a burn-in process.
         """
-        print('Setting Software Limits')
+        self.station_print('Setting Software Limits')
         
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             # Retrieve current configuration parameters
             configured_parameters = self.controller.configuration.parameters.get_configuration()
-            
-            # Set software limits based on hexapod type
-            if self.hex_type == 'HEX300-230HL':
-                configured_parameters.axes[axis].protection.softwarelimithigh.value = self.param_dict.get('ccw_software_limit')
-                configured_parameters.axes[axis].protection.softwarelimitlow.value = self.param_dict.get('cw_software_limit')
-            else:
-                configured_parameters.axes[axis].protection.softwarelimithigh.value = self.param_dict.get('cw_software_limit')
-                configured_parameters.axes[axis].protection.softwarelimitlow.value = self.param_dict.get('ccw_software_limit')
-            
+            configured_parameters.axes[axis].protection.softwarelimithigh.value = (((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1))
+            configured_parameters.axes[axis].protection.softwarelimitlow.value = ((((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1) * -1))
+
             # Apply the new configuration
             self.controller.configuration.parameters.set_configuration(configured_parameters)
         
         # Set additional parameters and reset the controller
-        self.params(self.midpoints, self.max_current_clamp, self.param_dict.get('fault_mask_all_limits_on'))
+        for axis in self.test_axes:
+            self.params(axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
         self.controller.reset()
         time.sleep(10)
         
         # Enable the connected axes
-        self.controller.runtime.commands.motion.enable(self.connected_axes)
+        self.controller.runtime.commands.motion.enable(self.test_axes)
         
+        if self.absolute:
         # Initialize burn-in process
-        BI = burn_in(self.speed, self.burnin_time, self.text_widget, self.window, self.connected_axes, self.nominal_travel, self.fault_log, self.strut_info, self.duty_cycle, self.job_log_dir, self.hex_type, self.encoder, self.job, self.op, self.comments, self.limit_log_file)
-        BI.initialize_burnin(self.controller)
+            BI = burn_in(self.speed, self.burnin_time, self.secondary_ui, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.specs_dict, self.stations, self.stage_log_file)
+            BI.initialize_burnin(self.controller)
         
-        populate_sheet = Sheets(self.job, self.data)
-        populate_sheet.populate_sheet()
-
-        # Home the struts
-        self.home_struts()
+            populate_sheet = Sheets(self.job, self.data)
+            populate_sheet.populate_sheet()
+        else:
+            # Home the struts
+            self.home_stages()
             
-    def home_struts(self):
+    def home_stages(self):
         """
         Home the struts based on the encoder type. 
 
         This method attempts to enable or home the connected axes, handling
         any faults that may occur during the process.
         """
-        print('Homing Axes')
+        self.station_print('Homing Axes')
         test = 'homing'
         
         def attempt_operation(operation):
@@ -780,25 +877,25 @@ class hex_strut_checkout():
                     self.handle_faults(test, faults_per_axis, self.reenable_run_button)
                     time.sleep(2)
         
-        if self.encoder in ['E1', 'E3']:
+        if not self.absolute:
             # Attempt to enable the connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.connected_axes.copy()))
+            attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.test_axes.copy()))
             time.sleep(1)  # Time delay between operations
         
             # Attempt to home the connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.home(self.connected_axes.copy()))
+            attempt_operation(lambda: self.controller.runtime.commands.motion.home(self.test_axes.copy()))
             time.sleep(1)
 
             # If no faults, update the "Marker" field for each axis
-            for axis in self.connected_axes:
+            for axis in self.test_axes:
                 self.data[f"Axis: {axis}"]["Marker"] = "Passed"
         else:
             # Attempt to move the connected axes to zero position
-            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(self.connected_axes, self.list_commands_zero, self.list_velocity))
+            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(self.test_axes, self.list_commands_zero, self.list_velocity))
             time.sleep(1)
             
             # Wait for motion to complete
-            self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
+            self.controller.runtime.commands.motion.waitformotiondone(self.test_axes)
             time.sleep(2)
         
             # Check for faults explicitly after moveabsolute
@@ -821,7 +918,7 @@ class hex_strut_checkout():
         """
         self.hardstop_pos = {}
         self.limit_pos = {}
-        print('Checking Limits and Hardstops')
+        self.station_print('Checking Limits and Hardstops')
         test = 'hardstop and limit check'
         
         def attempt_operation(operation):
@@ -842,112 +939,33 @@ class hex_strut_checkout():
                     self.handle_faults(test, faults_per_axis, self.reenable_run_button)
                     time.sleep(2)
                 if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
+                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.')
                     break
     
         test_time = abs(self.list_commands_ccw_pos[1]) / self.list_velocity[1]
         
-        def HEX150_125HL():
-            """
-            Function to check limits and hardstops for HEX150-125HL only
-
-            Returns
-            -------
-            None.
-            """
-            def ccw_limit():
-                limit = 'Ccw'
-                
-                self.enable(test)
-                
-                time.sleep(2)
-        
-                self.move_to_pos(test, test_time, limit)
-        
-                time.sleep(2)
-        
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-                
-                self.move_into_limit(test, limit)
-        
-                time.sleep(2)
-            
-            def cw_limit():
-                limit = 'Cw'
-                
-                self.enable(test)
-                        
-                time.sleep(2)
-                
-                self.move_to_pos(test, test_time, limit)
-                
-                time.sleep(2)
-                
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-                
-                self.move_into_limit(test, limit)
-                
-                time.sleep(2)
-                
-                self.move_out_of_hardstop(limit)
-                
-            def hardstop():
-                limit = 'Ccw'
-                self.move_into_hardstop(test, limit)
-                    
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                    time.sleep(2)
-                
-                self.move_out_of_hardstop(limit)
-        
-            ccw_limit()
-            time.sleep(2)
-            hardstop()
-            time.sleep(2)
-            
-            limit_to_hardstop = []
-            for axis in self.connected_axes:
-                theoretical_limit_travel = (self.limit_pos[axis].get('Ccw') + self.param_dict.get('limit_travel'))
-                theoretical_hardstop_travel = self.hardstop_pos[axis].get('Ccw') + self.param_dict.get('hardstop_travel')
-                if theoretical_limit_travel > theoretical_hardstop_travel:
-                    limit_to_hardstop.append(axis)
-            
-            if len(limit_to_hardstop) == 0:
-                cw_limit()
-            else:
-                messagebox.showerror('Hardstop Distance', 'The stage may hit the hardstop before it triggers the electrical limit. Please check and re-run the program.')
-                self.reenable_run_button()
-                sys.exit()
-                
-            self.validate_hardstops()
         def cw_check():
             limit = 'Cw'
-            
-            self.enable(test)
-                    
+            self.enable(test=test)
+            for axis in self.test_axes:
+                try:
+                    self.controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
+                    time.sleep(2)
+                    self.controller.runtime.commands.motion.waitformotiondone([axis])
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults()
+                    if faults_per_axis:
+                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)
+                        time.sleep(2)
             time.sleep(2)
-            
-            self.move_to_pos(test, test_time, limit)
-            
-            time.sleep(2)
-            
+
             # Explicitly check for faults after moveabsolute
             faults_per_axis = self.check_for_faults()  # Check for faults
             if faults_per_axis:
                 self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
             
             self.move_into_limit(test, limit)
-            
             time.sleep(2)
-            
             self.move_into_hardstop(test, limit)
             
             faults_per_axis = self.check_for_faults()  # Check for faults
@@ -957,17 +975,20 @@ class hex_strut_checkout():
             
             self.move_out_of_hardstop(limit)
             
-            self.validate_hardstops()
-            
         def ccw_check():
             limit = 'Ccw'
-            
-            self.enable(test)
-                    
+            self.enable(test=test)
             time.sleep(2)
-            
-            self.move_to_pos(test, test_time, limit)
-            
+            for axis in self.test_axes:
+                try:
+                    self.controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+                    time.sleep(2)
+                    self.controller.runtime.commands.motion.waitformotiondone([axis])
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults()
+                    if faults_per_axis:
+                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)
+                        time.sleep(2)
             time.sleep(2)
             
             # Explicitly check for faults after moveabsolute
@@ -976,10 +997,8 @@ class hex_strut_checkout():
                 self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
             
             self.move_into_limit(test, limit)
-            
             time.sleep(2)
-            
-            self.move_into_ccw_hardstop(test, limit)
+            self.move_into_hardstop(test, limit)
                 
             faults_per_axis = self.check_for_faults()  # Check for faults
             if faults_per_axis:
@@ -987,37 +1006,30 @@ class hex_strut_checkout():
                 time.sleep(2)
             
             self.move_out_of_hardstop(limit)
-            
-            self.validate_hardstops()
            
-        if self.hex_type == 'HEX150-125HL':
-            HEX150_125HL()
-            
-        else:
-            # Perform CCW and CW checks
-            ccw_check()
-            time.sleep(5)
-            
-            cw_check()
-            time.sleep(5)
+        # Perform CCW and CW checks
+        ccw_check()
+        time.sleep(5)
+        cw_check()
+        time.sleep(5)
         
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             self.data[f"Axis: {axis}"]["Limits"] = "Passed"
-
-        # Reapply parameters and home the struts
-        self.params(self.nominal_home_offset, self.max_current_clamp, self.param_dict.get('fault_mask_elec_limits_on'))
+            # Reapply parameters and home the struts
+            self.params(axis, current_clamp=self.max_current_clamp, limit='electrical on')
     
         # Enable connected axes before homing
-        attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.connected_axes.copy()))
+        attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.test_axes.copy()))
         
         # Calculate the limit travel and home the struts
         self.calculate_limit_travel()
-
-        self.marker_to_limit()
-
+        time.sleep(2)
         self.calculate_home_offset()
-        
-        BI = burn_in(self.speed, self.burnin_time, self.text_widget, self.window, self.connected_axes, self.nominal_travel, self.fault_log, self.strut_info, self.duty_cycle, self.job_log_dir, self.hex_type, self.encoder, self.job, self.op, self.comments, self.limit_log_file)
+        time.sleep(2)
+        self.marker_to_limit()
+        time.sleep(2)
+        print(f'Data To Sheet: {self.data}')
+        BI = burn_in(self.speed, self.burnin_time, self.secondary_ui, self.window, self.test_axes, self.nominal_travel, self.fault_log, self.stage_info, self.duty_cycle, self.job_log_dir, self.stage_type, self.absolute, self.job, self.op, self.comments, self.specs_dict, self.stations, self.stage_log_file)
         BI.initialize_burnin(self.controller)
         
         populate_sheet = Sheets(self.job, self.data)
@@ -1025,8 +1037,10 @@ class hex_strut_checkout():
 
         time.sleep(5)
         
-        self.home_struts()
+        self.home_stages()
 
+        self.station_print("All tests completed.")
+    
     def marker_to_limit(self):
         """
         Move the connected axes to the marker position and log the position.
@@ -1034,21 +1048,21 @@ class hex_strut_checkout():
         This function moves the connected axes to the marker position and logs the position.
         It handles any faults that may occur during the operation and retries if necessary.
         """
-        print('Checking Marker to Limit Distance')
+        self.station_print('Checking Marker to Limit Distance')
         test = 'marker to limit'
-        limit = 'Cw' if self.hex_type == 'HEX300-230HL' else 'Ccw'
-        
-        # Change home offset to zero for marker to limit check
-        self.params(self.zero_home_offset, self.max_current_clamp, self.param_dict.get('fault_mask_elec_limits_on'))
+        limit = 'Ccw'
+        for axis in self.test_axes:
+            # Change home offset to zero for marker to limit check
+            self.params(axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
 
-        self.home_struts()
+        self.home_stages()
 
         self.move_into_limit(test, limit)
 
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             # Configuration to retrieve items from the A1 controller
             status_item_configuration = a1.StatusItemConfiguration()
-            
+            status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, axis)
             # Retrieve position feedback from the controller
             results = self.controller.runtime.status.get_status_items(status_item_configuration)
             
@@ -1058,9 +1072,15 @@ class hex_strut_checkout():
             self.data[f"Axis: {axis}"]["Home Marker From Limit"] = strut_limit_pos
 
         # Reapply parameters and home the struts
-        self.params(self.nominal_home_offset, self.max_current_clamp, self.param_dict.get('fault_mask_elec_limits_on'))
+        for axis in self.test_axes:
+            self.params(axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit='electrical on')
+        
+        self.enable()
+        time.sleep(2)
+        self.home_stages()
+        time.sleep(2)
 
-    def enable(self, test):
+    def enable(self, test=None):
         """
         Enables the connected axes and handles any faults that may occur.
 
@@ -1083,72 +1103,12 @@ class hex_strut_checkout():
                     self.handle_faults(test, faults_per_axis, self.reenable_run_button)
                     time.sleep(2)
                 if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
+                    self.station_print(f'Exceeded retry limit with axes: {self.test_axes}. Exiting operation.')
                     break
         # Enable connected axes
-        attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.connected_axes))
+        attempt_operation(lambda: self.controller.runtime.commands.motion.enable(self.test_axes))
         time.sleep(1)
-        
-    def move_to_pos(self, test, test_time, limit):
-        """
-        Move the connected axes to a specified position based on the given limit.
-
-        Parameters:
-            test (str): The name of the test being performed.
-            test_time (float): The time to wait after initiating the move.
-            limit (str): The direction of the limit ('Ccw' or 'Cw').
-
-        This function attempts to move the connected axes to either the
-        counter-clockwise (Ccw) or clockwise (Cw) end of nominal travel.
-        It handles any faults that occur during the operation and retries if necessary.
-        """
-
-        def attempt_operation(operation):
-            """
-            Helper function to handle and retry failed operations due to axis faults.
-            """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
-                    break
-
-        if limit == 'Ccw':
-            # Move to CCW end of nominal travel for connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(
-                self.connected_axes, self.list_commands_ccw_pos, self.list_velocity))
-            time.sleep(test_time)
-            try:
-                self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
-            except ControllerAxisFaultException:
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-        else:
-            # Move to CW end of nominal travel for connected axes
-            attempt_operation(lambda: self.controller.runtime.commands.motion.moveabsolute(
-                self.connected_axes, self.list_commands_cw_pos, self.list_velocity))
-            time.sleep(test_time)
-            try:
-                self.controller.runtime.commands.motion.waitformotiondone(self.connected_axes)
-            except ControllerAxisFaultException:
-                # Explicitly check for faults after moveabsolute
-                faults_per_axis = self.check_for_faults()  # Check for faults
-                if faults_per_axis:
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-
-        time.sleep(1)  # Ensure all operations have completed before proceeding
-        
+    
     def move_into_limit(self, test, limit):
         """
         Move the connected axes to a specified limit (CCW or CW) and log the position.
@@ -1161,27 +1121,26 @@ class hex_strut_checkout():
             """
             Helper function to handle and retry failed operations due to axis faults.
             """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
-                    break
-                
+            try:
+                operation()  # Attempt the operation
+            except (ControllerAxisFaultException, ControllerOperationException):
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                time.sleep(2)
+
+        test_time = 2
+        n = int(self.sample_rate * test_time)
+        freq = a1.DataCollectionFrequency.Frequency1kHz
+
         # For each axis, move to CCW limit and log position
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
+            data_config = self.data_config(n, freq, axis)
             attempt_operation(lambda: self.controller.runtime.commands.motion.enable(axis))
             time.sleep(1)
+            self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
             if limit == 'Ccw':
-                attempt_operation(lambda: self.controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1))
+                self.controller.runtime.commands.motion.movefreerun([axis], [-1])
                 time.sleep(3)
                 try:
                     self.controller.runtime.commands.motion.waitformotiondone(axis)
@@ -1189,9 +1148,10 @@ class hex_strut_checkout():
                     # Explicitly check for faults after moveabsolute
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
-                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
+                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        time.sleep(2) 
             else:
-                attempt_operation(lambda: self.controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1))
+                self.controller.runtime.commands.motion.movefreerun([axis], [1])
                 time.sleep(3)
                 try:
                     self.controller.runtime.commands.motion.waitformotiondone(axis)
@@ -1199,15 +1159,16 @@ class hex_strut_checkout():
                     # Explicitly check for faults after moveabsolute
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
-                        self.handle_faults(test, faults_per_axis, self.reenable_run_button)  # Handle any faults before moving forward
-            
+                        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        time.sleep(2) 
+            results = self.controller.runtime.data_collection.get_results(data_config, n)
+            self.populate(axis, results)    
             if test != 'marker to limit':
-                # Ensure only active axes are logged
-                if axis in self.connected_axes:
-                    self.log_limit_pos(axis, limit)
+                self.log_limit_pos(axis, limit, results)
             time.sleep(2)
 
-        time.sleep(1)
+        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+        time.sleep(2) 
     
     def move_into_hardstop(self, test, limit):
         """
@@ -1224,38 +1185,36 @@ class hex_strut_checkout():
 
             The operation is retried after faults are handled.
             """
-            retries = 0
-            retry_limit = 10  # Set a retry limit to prevent infinite loops
-            while retries < retry_limit:
-                try:
-                    operation()  # Attempt the operation
-                    break  # Exit the loop if successful
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    retries += 1
-                    faults_per_axis = self.check_for_faults()
-                    self.handle_faults(test, faults_per_axis, self.reenable_run_button)
-                    time.sleep(2)
-                if retries == retry_limit:
-                    print(f'Exceeded retry limit with axes: {self.connected_axes}. Exiting operation.')
-                    break
-                
-        for axis in self.connected_axes:
+            try:
+                operation()  # Attempt the operation
+            except (ControllerAxisFaultException, ControllerOperationException):
+                faults_per_axis = self.check_for_faults()  # Check for faults
+                if faults_per_axis:
+                    self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                time.sleep(2)
+            
+        move_time = float(self.specs_dict.get('HardToHard-FirstContact').split()[0]) - float(self.specs_dict.get('LimitToLimitTravel').split()[0])
+        test_time = ((move_time / 2) / 0.25) + 30
+        n = int(self.sample_rate * test_time)
+        freq = a1.DataCollectionFrequency.Frequency1kHz
+        
+        for axis in self.test_axes:
+            data_config = self.data_config(n, freq, axis)
             # Set the maximum current clamp to the low value
             self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.low_current_clamp
             # Set the fault mask to disable electrical limits
-            self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.FaultMask].value = self.param_dict.get('fault_mask_elec_limits_off')
+            limit_dec = self.get_limit_dec(axis, limit='electrical off')
+            self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.FaultMask].value = limit_dec
             
             time.sleep(2)
             attempt_operation(lambda: self.controller.runtime.commands.motion.enable(axis))
             time.sleep(1)
-            
+
+            self.controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
+
             if limit == 'Ccw':
-                if self.hex_type == 'HEX300-230HL':
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.moveincremental([axis], [0.5], [0.25]))
-                elif self.hex_type == 'HEX150-125HL':
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [-0.25]))
-                else:
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.moveincremental([axis], [-0.5], [0.25]))
+                self.controller.runtime.commands.motion.movefreerun([axis], [-0.25])
+                
                 time.sleep(3)
                 
                 try:
@@ -1265,17 +1224,10 @@ class hex_strut_checkout():
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
                         self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        time.sleep(2)   
-                # Ensure only active axes are logged
-                if axis in self.connected_axes:
-                    self.log_hardstop_pos(axis, limit)
+                        time.sleep(2)
+                time.sleep(10)   
             else:
-                if self.hex_type == 'HEX300-230HL':
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.moveincremental([axis], [-0.5], [0.25]))
-                elif self.hex_type == 'HEX150-125HL':
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.movefreerun([axis], [0.25]))
-                else:
-                    attempt_operation(lambda: self.controller.runtime.commands.motion.moveincremental([axis], [0.5], [0.25]))
+                self.controller.runtime.commands.motion.movefreerun([axis], [0.25])
                 time.sleep(3)
                 
                 try:
@@ -1285,13 +1237,16 @@ class hex_strut_checkout():
                     faults_per_axis = self.check_for_faults()  # Check for faults
                     if faults_per_axis:
                         self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                        time.sleep(2)   
-                # Ensure only active axes are logged
-                if axis in self.connected_axes:
-                    self.log_hardstop_pos(axis, limit)
+                        time.sleep(2)  
+                time.sleep(10) 
+            results = self.controller.runtime.data_collection.get_results(data_config, n)
+            self.populate(axis, results)
+            self.log_hardstop_pos(axis, limit, results)
                 
             time.sleep(2)
-        time.sleep(1)   
+            
+        self.controller.runtime.commands.fault_and_error.acknowledgeall(1)
+        time.sleep(2)   
     
     def move_out_of_hardstop(self, limit):
         """
@@ -1302,9 +1257,9 @@ class hex_strut_checkout():
         """
         if limit == 'Ccw':
             # Move out of the hardstop in the Ccw direction
-            for axis in self.connected_axes:
+            for axis in self.test_axes:
                 self.controller.runtime.commands.motion.enable([axis])
-                self.controller.runtime.commands.motion.moveabsolute([axis], [self.param_dict.get('nominal_ccw_pos')], [1])
+                self.controller.runtime.commands.motion.moveincremental([axis], [((float(self.specs_dict.get('NominalTravel').split()[0])) / 2)], [10])
                 self.controller.runtime.commands.motion.waitformotiondone([axis])
                 
                 # Explicitly check for faults after moveabsolute
@@ -1322,9 +1277,9 @@ class hex_strut_checkout():
                 time.sleep(2)
         else:
             # Move out of the hardstop in the Cw direction
-            for axis in self.connected_axes:
+            for axis in self.test_axes:
                 self.controller.runtime.commands.motion.enable([axis])
-                self.controller.runtime.commands.motion.moveabsolute([axis], [self.param_dict.get('nominal_cw_pos')], [1])
+                self.controller.runtime.commands.motion.moveincremental([axis], [(((float(self.specs_dict.get('NominalTravel').split()[0])) / 2) * -1)], [10])
                 self.controller.runtime.commands.motion.waitformotiondone([axis])
                 
                 # Explicitly check for faults after moveabsolute
@@ -1341,99 +1296,124 @@ class hex_strut_checkout():
                         
                 time.sleep(2)
                     
-        for axis in self.connected_axes:
+        for axis in self.test_axes:
             # Set the maximum current clamp to the low value
             self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.max_current_clamp
             # Set the fault mask to disable electrical limits
-            self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.FaultMask].value = self.param_dict.get('fault_mask_elec_limits_on')
+            limit_dec = self.get_limit_dec(axis, limit='electrical on')
+            self.controller.runtime.parameters.axes[axis][a1.AxisParameterId.FaultMask].value = limit_dec
             
-    def log_hardstop_pos(self, axis, limit):
+            
+    def log_hardstop_pos(self, axis, limit, results):
         """
         Logs the current position of the given axis after it has reached its hardstop in the specified direction.
 
         Parameters:
             axis (int): The axis number to log the hardstop position for.
             limit (str): The direction of the limit ('Ccw' or 'Cw').
+            results (a1.DataCollectionResults): The results of the data collection run.
         """
-        # Configuration to retrieve items from the A1 controller
-        status_item_configuration = a1.StatusItemConfiguration()
-        status_item_configuration.axis.add(a1.AxisDataSignal.PositionFeedback, axis)
-        
-        # Retrieve position feedback from the controller
-        results = self.controller.runtime.status.get_status_items(status_item_configuration)
-        
-        # Retrieve position feedback and round to 4 decimal places
-        strut_hardstop_pos = round(results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).value, 4)
-        
+        position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
+
+        # Combine signals into a dictionary for logging
+        signals = {
+            "Position Error Bit Toggled": self.pos_error_fault,
+            "Over Current Bit Toggled": self.over_current_fault,
+            "Raw Position Feedback": position_feedback,
+        }
+
+        # Log signals to a text file
+        log_file_path = os.path.join("logs", f"signal_data_log-{axis}-{limit}-Hardstop.txt")
+        self.log_signals_to_file(log_file_path, signals)
+
+        end_position = None  # Initialize variable to store the position feedback
+
+        # Iterate through velocity_command and track zero crossings
+        for i, bit in enumerate(self.pos_error_fault):
+            if bit == 1:
+                end_position = position_feedback[i]
+                break  # Stop searching after finding the second zero crossing
+        if end_position == None:
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.over_current_fault):
+                if bit == 1:
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+        if end_position == None:
+            if limit == 'Ccw':
+                absolute_feedback = [abs(value) for value in position_feedback]
+                max_feedback = max(absolute_feedback)
+                end_position = (max_feedback * -1)
+            else:
+                end_position = max(position_feedback)
+            
         # Use a nested dictionary to store both 'Ccw' and 'Cw' positions
         if axis not in self.hardstop_pos:
             self.hardstop_pos[axis] = {}  # Create a new dictionary for each axis
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
-        self.hardstop_pos[axis][limit] = strut_hardstop_pos
+        self.hardstop_pos[axis][limit] = end_position
         
         # Log the position of the current limit
-        self.strut_info.info(f'{limit} hardstop Position for {axis}: {strut_hardstop_pos}')
+        self.stage_info.info(f'{limit} hardstop Position for {axis}: {end_position}')
         
-    def log_limit_pos(self, axis, limit):
+    def log_limit_pos(self, axis, limit, results):
         """
         Logs the current position of the given axis after it has reached its limit in the specified direction.
 
         Parameters:
             axis (int): The axis number to log the limit position for.
             limit (str): The direction of the limit ('Ccw' or 'Cw').
+            results (a1.DataCollectionResults): The results of the data collection run.
         """
-        # Configuration to retrieve items from the A1 controller
-        status_item_configuration = a1.StatusItemConfiguration()
-        
-        # Retrieve position feedback from the controller
-        results = self.controller.runtime.status.get_status_items(status_item_configuration)
-        
-        # Retrieve position feedback and round to 4 decimal places
-        strut_limit_pos = round(results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).value, 4)
-        
+        position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
+
+        if limit == 'Ccw':
+            # Combine signals into a dictionary for logging
+            signals = {
+                "Fault Bit Toggled": self.ccw_fault,
+                "Position Feedback": position_feedback,
+            }
+
+            # Log signals to a text file
+            log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Ccw-Limit.txt")
+            self.log_signals_to_file(log_file_path, signals)
+
+            end_position = None  # Initialize variable to store the position feedback
+
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.ccw_fault):
+                if bit == 1:  # Check if velocity_command is zero
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+        else:
+            # Combine signals into a dictionary for logging
+            signals = {
+                "Fault Bit Toggled": self.cw_fault,
+                "Position Feedback": position_feedback,
+            }
+
+            # Log signals to a text file
+            log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Cw-Limit.txt")
+            self.log_signals_to_file(log_file_path, signals)
+
+            end_position = None  # Initialize variable to store the position feedback
+
+            # Iterate through velocity_command and track zero crossings
+            for i, bit in enumerate(self.cw_fault):
+                if bit == 1:  # Check if velocity_command is zero
+                    end_position = position_feedback[i]
+                    break  # Stop searching after finding the second zero crossing
+
         # Use a nested dictionary to store both 'Ccw' and 'Cw' positions
         if axis not in self.limit_pos:
             self.limit_pos[axis] = {}  # Create a new dictionary for each axis
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
-        self.limit_pos[axis][limit] = strut_limit_pos
+        self.limit_pos[axis][limit] = end_position
         
         # Log the position of the current limit
-        self.strut_info.info(f'{limit} limit Position for {axis}: {strut_limit_pos}')
-    
-    def validate_hardstops(self):
-        """
-        Validates that the hardstops are within the specified distance from the limits.
-
-        If any axes fail the check, a message is displayed and an error is logged.
-        """
-        cw_fail_list = []
-        ccw_fail_list = []
-
-        for axis in self.connected_axes:
-            # Calculate the distance between the CCW limit and the CCW hardstop
-            limit_to_hardstop = abs(self.limit_pos[axis].get('Ccw') - self.hardstop_pos[axis].get('Ccw'))
-            if limit_to_hardstop < self.param_dict.get('limit_to_hardstop'):
-                print(f'{axis} did not meet Ccw hardstop position requirements - {round(limit_to_hardstop,4)}')
-                self.strut_info.info(f'{axis} did not meet CW hardstop position requirements - {round(limit_to_hardstop,4)}')
-                ccw_fail_list.append(axis)
-
-            # For HEX150-125HL, also check the CW hardstop position
-            if self.hex_type == 'HEX150-125HL':
-                cw_hardstop = self.hardstop_pos[axis].get('Ccw') + self.param_dict.get('hardstop_travel')
-                limit_to_hardstop = abs(self.limit_pos[axis].get('Cw') - cw_hardstop)
-
-                if limit_to_hardstop < self.param_dict.get('limit_to_hardstop'):
-                    print(f'{axis} did not meet Cw hardstop position requirements - {round(limit_to_hardstop,4)}')
-                    self.strut_info.info(f'{axis} did not meet CW hardstop position requirements - {round(limit_to_hardstop,4)}')
-                    ccw_fail_list.append(axis)
-
-        # If any axes failed the check, display a message and log an error
-        if len(ccw_fail_list) > 0 and len(cw_fail_list) > 0:
-            hardstop_fail = "One or more axes do not meet the minimum limit-to-hardstop distance. Click OK to continue (this will be checked again later)"
-            print(hardstop_fail)
-            messagebox.showerror("Fail", hardstop_fail)
+        self.stage_info.info(f'{limit} limit Position for {axis}: {end_position}')
             
     def calculate_limit_travel(self):
         """
@@ -1442,32 +1422,52 @@ class hex_strut_checkout():
         it fails the test and logs an error.
         """
         limit_fail_list  = []
+        hardstop_fail_list = []
         # Calculate the distance between CW and CCW limits for each axis
-        for axis in self.limit_pos:
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
             if 'Ccw' in self.limit_pos[axis] and 'Cw' in self.limit_pos[axis]:
-                ccw_position = self.limit_pos[axis]['Ccw']
-                cw_position = self.limit_pos[axis]['Cw']
-                limit_distance = abs(cw_position - ccw_position)
+                ccw_limit_position = self.limit_pos[axis]['Ccw']
+                cw_limit_position = self.limit_pos[axis]['Cw']
+                limit_distance = abs(cw_limit_position - ccw_limit_position)
                 limit_distance = round(limit_distance, 4)
-                
-                spec = self.param_dict.get('limit_travel')
-                
-                if limit_distance < spec:
-                    failing = (spec - limit_distance)
-                    print(f'Axis {axis} is failing with a limit travel of {round(failing, 4)}')
-                    self.strut_info.info(f'Axis {axis} is failing with a limit travel of {round(failing, 4)}')
-                    limit_fail_list.append(axis)
-                else:
-                    self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
-
-                print(f'Axis {axis}: CCW Limit Position = {ccw_position}, CW Limit Position = {cw_position}, Limit Distance = {limit_distance}')
-                self.strut_info.info(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}')
             else:
-                print(f"Axis {axis} is missing one or more limit positions.")
+                self.station_print(f"Axis {axis} is missing one or more limit positions.", station_id=station_id)
+            if 'Ccw' in self.hardstop_pos[axis] and 'Cw' in self.hardstop_pos[axis]:
+                ccw_hardstop_position = self.hardstop_pos[axis]['Ccw']
+                cw_hardstop_position = self.hardstop_pos[axis]['Cw']
+                hardstop_distance = abs(cw_hardstop_position - ccw_hardstop_position)
+                hardstop_distance = round(hardstop_distance, 4)
+            else:
+                self.station_print(f"Axis {axis} is missing one or more limit positions.", station_id=station_id)
+
+            limit_spec = float(self.specs_dict.get('LimitToLimitTravel').split()[0])
+            hardstop_spec = float(self.specs_dict.get('HardToHard-FirstContact').split()[0])
+            
+            if limit_distance < limit_spec:
+                #limit_failing = (limit_spec - limit_distance)
+                self.station_print(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}', station_id=station_id)
+                self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}')
+                limit_fail_list.append(axis)
+            else:
+                self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
+            if hardstop_distance < hardstop_spec:
+                #hardstop_failing = (hardstop_spec - hardstop_distance)
+                self.station_print(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}', station_id=station_id)
+                self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(hardstop_distance, 4)}')
+                hardstop_fail_list.append(axis)
+            #else:
+                #self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
+
+            self.station_print(f'Axis {axis}: CCW Limit Position = {ccw_limit_position}, CW Limit Position = {cw_limit_position}, Limit Distance = {limit_distance}', station_id=station_id)
+            self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
+            self.stage_info.info(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}')
+            self.stage_info.info(f'Axis {axis} Distance between Ccw hardstop and Cw hardstop: {hardstop_distance}')
+            
                 
         if len(limit_fail_list) > 0:
             limit_fail = "One or more axes do not meet the minimum limit-to-hardstop distance. Please adjust before moving on."
-            print(limit_fail)
+            self.station_print(limit_fail, station_id=station_id)
             messagebox.showerror("Fail", limit_fail)
             self.reenable_run_button()  # Call the callback to re-enable the button
             sys.exit()           
@@ -1484,10 +1484,12 @@ class hex_strut_checkout():
 
         # Add items to collect data on the specified axis
         data_config.axis.add(a1.AxisDataSignal.DriveStatus, axis)
+        data_config.axis.add(a1.AxisDataSignal.AxisFault, axis)
         data_config.axis.add(a1.AxisDataSignal.PrimaryFeedback, axis)
         data_config.axis.add(a1.AxisDataSignal.PositionFeedback, axis)
         data_config.axis.add(a1.AxisDataSignal.CurrentCommand, axis)
         data_config.axis.add(a1.AxisDataSignal.CurrentFeedback, axis)
+        data_config.axis.add(a1.AxisDataSignal.VelocityCommand, axis)
 
         return data_config
     
@@ -1504,10 +1506,14 @@ class hex_strut_checkout():
         self.hall_b = []
         self.hall_c = []
         self.pri_fbk = []
+        self.ccw_fault = []
+        self.cw_fault = []
+        self.pos_error_fault = []
+        self.over_current_fault = []
 
         # Retrieve the drive status points for the specified axis
         halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
-
+        faults = results.axis.get(a1.AxisDataSignal.AxisFault, axis).points
         # Retrieve the primary feedback points for the specified axis
         self.pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
 
@@ -1516,7 +1522,11 @@ class hex_strut_checkout():
             self.hall_a.append(1 if ((int(x) & a1.DriveStatus.HallAInput.value) > 0) else 0)
             self.hall_b.append(1 if ((int(x) & a1.DriveStatus.HallBInput.value) > 0) else 0)
             self.hall_c.append(1 if ((int(x) & a1.DriveStatus.HallCInput.value) > 0) else 0)
-        
+        for x in faults:
+            self.ccw_fault.append(1 if ((int(x) & a1.AxisFault.CcwEndOfTravelLimitFault.value) > 0) else 0)
+            self.cw_fault.append(1 if ((int(x) & a1.AxisFault.CwEndOfTravelLimitFault.value) > 0) else 0)
+            self.pos_error_fault.append(1 if ((int(x) & a1.AxisFault.PositionErrorFault.value) > 0) else 0)
+            self.over_current_fault.append(1 if ((int(x) & a1.AxisFault.OverCurrentFault.value) > 0) else 0)
     def init_logger(self):
         """
         Initialize the logging system for the strut checkout station.
@@ -1525,7 +1535,7 @@ class hex_strut_checkout():
         Configures the loggers and handlers for both log files.
         """
         # Create the root directory for logs if it doesn't exist
-        base_log_dir = r"O:\Strut Checkout"
+        base_log_dir = r"O:\CMP Check-out"
         os.makedirs(base_log_dir, exist_ok=True)
 
         # Create a subdirectory for the current job using self.job
@@ -1543,118 +1553,36 @@ class hex_strut_checkout():
         self.fault_log.setLevel(logging.INFO)
 
         # Configure the second log file for limit information logging
-        strut_log_file = os.path.join(self.job_log_dir, f'{self.job} Strut Info.log')
-        self.strut_info = logging.getLogger('strut_info')
-        strut_handler = logging.FileHandler(strut_log_file)
-        strut_handler.setLevel(logging.INFO)
-        strut_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        strut_handler.setFormatter(strut_formatter)
-        self.strut_info.addHandler(strut_handler)
-        self.strut_info.setLevel(logging.INFO)
-        
-    def init_specs(self):
-        """
-        Initialize the parameters for the strut checkout station based on the hexapod type.
+        self.stage_log_file = os.path.join(self.job_log_dir, f'{self.job} Stage Info.log')
+        self.stage_info = logging.getLogger('stage_info')
+        stage_handler = logging.FileHandler(self.stage_log_file)
+        stage_handler.setLevel(logging.INFO)
+        stage_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        stage_handler.setFormatter(stage_formatter)
+        self.stage_info.addHandler(stage_handler)
+        self.stage_info.setLevel(logging.INFO)
 
-        Retrieves the parameters for the specified hexapod type from a dictionary mapping.
-        The parameters include the nominal travel, hardstop travel, limit travel, limit-to-hardstop distance,
-        maximum current clamp, low current clamp, nominal home offset, and limit home speed.
+    def log_signals_to_file(self, log_file_path, signals):
         """
-        self.hex150_125_params = {
-            'nominal_travel': 16.5,
-            'hardstop_travel': 20.5,
-            'limit_travel': 18.5,
-            'limit_to_hardstop': 0.5,
-            'nominal_cw_pos': 8.25,
-            'nominal_ccw_pos': -8.25,
-            'max_current_clamp': 4.4,
-            'low_current_clamp': 0.7,
-            'nominal_home_offset': 8.25,
-            'limit_home_speed': 0.5,
-            'fault_mask_elec_limits_on': 1350829519,
-            'fault_mask_elec_limits_off': 1350829507,
-            'fault_mask_all_limits_on': 1350829567,
-            'fault_mask_all_limits_off': 1350829507
-        }
-        self.hex150_140_params = {
-            'nominal_travel': 16,  # Fixed the typo here
-            'hardstop_travel': 17.7,
-            'limit_travel': 16.7,
-            'limit_to_hardstop': 0.5,
-            'nominal_cw_pos': 8,
-            'nominal_ccw_pos': -8,
-            'max_current_clamp': 1.6,
-            'low_current_clamp': 0.4,
-            'nominal_home_offset': 8,
-            'limit_home_speed': 0.5,
-            'fault_mask_elec_limits_on': 1350829519,
-            'fault_mask_elec_limits_off': 1350829507,
-            'fault_mask_all_limits_on': 1350829567,
-            'fault_mask_all_limits_off': 1350829507
-        }
-        self.hex300_params = {
-            'nominal_travel': 26,
-            'hardstop_travel': 27.4,
-            'limit_travel': 26.4,
-            'limit_to_hardstop': 0.5,
-            'nominal_cw_pos': -13,
-            'nominal_ccw_pos': 13,
-            'cw_software_limit': -13.1,
-            'ccw_software_limit': 13.1,
-            'max_current_clamp': 1.7,
-            'low_current_clamp': 0.8,
-            'nominal_home_offset': -12,
-            'limit_home_speed': 0.5,
-            'fault_mask_elec_limits_on': 1355154895,
-            'fault_mask_elec_limits_off': 1355154883,
-            'fault_mask_all_limits_on': 1355157503,
-            'fault_mask_all_limits_off': 1355157443
-        }
-        self.hex500_params = {
-            'nominal_travel': 50,
-            'hardstop_travel': 53,
-            'limit_travel': 52,
-            'nominal_cw_pos': 25,
-            'nominal_ccw_pos': -25,
-            'cw_software_limit': 25.1,
-            'ccw_software_limit': -25.1,
-            'limit_to_hardstop': 0.5,
-            'max_current_clamp': 3,
-            'low_current_clamp': 1.5,
-            'nominal_home_offset': 25,
-            'limit_home_speed': 0.5,
-            'fault_mask_elec_limits_on': 1355154895,
-            'fault_mask_elec_limits_off': 1355154883,
-            'fault_mask_all_limits_on': 1355157503,
-            'fault_mask_all_limits_off': 1355157443
-        }
-        
-        # Use a dictionary to map hex_type to parameters
-        hex_params_mapping = {
-            'HEX150-125HL': self.hex150_125_params,
-            'HEX150-140HL': self.hex150_140_params,
-            'HEX300-230HL': self.hex300_params,
-            'HEX500-350HL': self.hex500_params
-        }
+        Log all collected signals to a text file.
 
-        # Retrieve the parameters based on hex_type
-        self.param_dict = hex_params_mapping.get(self.hex_type)
-        
-        self.nominal_travel = self.param_dict.get('nominal_travel')
-        self.hardstop_travel = self.param_dict.get('hardstop_travel')
-        self.limit_travel = self.param_dict.get('limit_travel')
-        self.limit_to_hardstop = self.param_dict.get('limit_to_hardstop')
-        self.max_current_clamp = self.param_dict.get('max_current_clamp')
-        self.low_current_clamp = self.param_dict.get('low_current_clamp')
-        self.nominal_home_offset = self.param_dict.get('nominal_home_offset')
-        self.limit_home_speed = self.param_dict.get('limit_home_speed')
-        self.zero_home_offset = 0
-        #self.limits_enabled = 1355154895
-        #self.limits_disabled = 1355154883
-        #self.all_limits_enabled = 1355157503
-        #self.all_limits_disabled = 1355157443
-        
-        # Handle the case where hex_type is not recognized
-        if self.param_dict is None:
-            self.fault_log.error(f'Unknown hexapod type: {self.hex_type}')
-            raise ValueError(f'Unknown hexapod type: {self.hex_type}')
+        Args:
+            log_file_path (str): Path to the log file.
+            signals (dict): Dictionary of signal names and their corresponding data.
+        """
+        try:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
+            # Open the file in write mode
+            with open(log_file_path, 'w') as log_file:
+                log_file.write("Signal Data Log\n")
+                log_file.write("=" * 40 + "\n\n")
+                
+                for signal_name, signal_data in signals.items():
+                    log_file.write(f"Signal: {signal_name}\n")
+                    log_file.write(f"Data Points: {len(signal_data)}\n")
+                    log_file.write(f"Values: {signal_data}\n")
+                    log_file.write("\n" + "-" * 40 + "\n")
+        except Exception as e:
+            print(f"Error logging signals: {e}")

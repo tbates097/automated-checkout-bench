@@ -18,24 +18,68 @@ from Logger import TextLogger
 
 class Burn_In_Plotting():
     
-    def __init__(self, axis_data, stage_type, encoder, burn_in_time, job, op, comments, folder, text_widget):
+    def __init__(self, axis_data, stage_type, burn_in_time, job, op, comments, folder, secondary_ui, specs_dict, stations, test_axes):
         self.axis_data = axis_data
         self.stage_type = stage_type
-        self.encoder = encoder
         self.burn_in_time = burn_in_time
         self.job = job
         self.op = op
         self.comments = comments
         self.folder = folder
-        self.text_widget = text_widget
+        self.secondary_ui = secondary_ui
+        self.specs_dict = specs_dict
+        self.stations = stations
+        self.test_axes = test_axes 
         
         self.sample_rate = 1000
         # Extract available axes and cycles from the data
         self.available_axes, self.available_cycles = self.get_axes_and_cycles()
         
-        self.text_logger = TextLogger(text_widget)
-        sys.stdout = self.text_logger
-        
+        self.station_loggers = {}
+        for station_id in self.stations:
+            station_widget = self.secondary_ui.station_widgets.get(station_id)
+            if station_widget:
+                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
+
+        # Define a mapping between axis names and station IDs
+        self.axis_to_station_map = {
+            'ST01': 1,
+            'ST02': 2,
+            'ST03': 3,
+            'ST04': 4,
+            'ST05': 5,
+            'ST06': 6,
+            'ST07': 7,
+            'ST08': 8,
+            'ST09': 9,
+            'ST10': 10
+            # Add more mappings as needed
+        }
+
+    def station_print(self, message, station_id=None):
+        """
+        Print a message to a specific station's text_widget or all stations.
+
+        Parameters:
+            message (str): The message to display.
+            station_id (int or None): The ID of the station to print to.
+                                      If None, print to all allocated stations.
+        """
+        #print(f'Station ID: {station_id}')
+        if station_id is None:  # Print to all stations
+            for sid, logger in self.station_loggers.items():
+                logger.write(message + "\n")
+        elif station_id in self.station_loggers:  # Print to a specific station
+            self.station_loggers[station_id].write(message + "\n")
+        else:
+            print(f"[Warning] Invalid station_id {station_id}. Message: {message}")
+
+    def reset_stdout(self):
+        """
+        Reset sys.stdout to its original value.
+        """
+        sys.stdout = sys.__stdout__
+
     def get_axes_and_cycles(self):
         """
         Get the available axes and cycles from the axis_data.
@@ -100,8 +144,9 @@ class Burn_In_Plotting():
                     ))
             self.add_info_tables(fig, axis, "all_cycles")
             self.save_plot(fig, axis, "all_cycles")
-            
-        print(f"Plots saved in: {self.plot_folder}")
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)    
+            self.station_print(f"Plots saved in: {self.plot_folder}", station_id=station_id)
     
     def create_subplot(self, axis, cycle, is_fft=False):
         """
@@ -185,8 +230,7 @@ class Burn_In_Plotting():
         degree_sign = u'\N{DEGREE SIGN}'
         conditions = [
             ['Temperature', f'{20} {degree_sign}C'],
-            ['Burn-In Time', f'{self.burn_in_time} hours'],
-            ['Encoder', f'{self.encoder}']
+            ['Burn-In Time', f'{self.burn_in_time} hours']
         ]
         fig.add_trace(go.Table(
             header=dict(values=["Condition", "Value"], align="left"),

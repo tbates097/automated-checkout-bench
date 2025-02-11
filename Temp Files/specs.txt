@@ -1,0 +1,32 @@
+NumAxes:1.0 
+Motor:BLMC (Forcer Length : "-142", Winding Designation : "-A", Air Cooling : "-NC", Hall Effect Sensors : "-H", Preparation : "-S", Magnet Track : "-P") 
+NumMotors:1.0 
+LinearFrictionForce:7.0 N
+WedgeRatio:1.0 
+MotorCurrentDerateFactor:1.0 
+PrmFbkType:SQR 
+PrmFbkFinalResolution:0.1 µm
+PrmIncFbkRawResolution:20.0 µm
+PrmAbsFbkBits: 
+PrmAbsFbkInverted: 
+AuxFbkType: 
+AuxFbkFinalResolution:0.0 µm
+AuxIncFbkRawResolution:0.0 µm
+AuxAbsFbkBits:0.0 
+AuxAbsFbkInverted: 
+LimitType:SWITCH 
+NominalTravel:200.0 mm
+LimitToLimitTravel:205.0 mm
+HardToHard-FirstContact:216.0 mm
+HardToHard-Compressed:220.0 mm
+LimitDecelDistance:5.0 mm
+EndOfTravelCurrentThreshold:0.0 Apk
+MaxSpeed:2000.0 mm/s
+DefaultSpeed:80.0 mm/s
+DefaultRampRate:1000.0 mm/s/s
+HomeSpeed:80.0 mm/s
+HomeRampRate:500.0 mm/s/s
+MovingMass:2.4 kg
+TotalMass:12.950000000000001 kg
+URL:https://www.aerotech.com/product/stages-actuators/pro165lm-mechanical-bearing-linear-motor-stage/ 
+ThermistorAvailable:1.0 
