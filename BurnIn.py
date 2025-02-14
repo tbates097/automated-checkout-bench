@@ -16,7 +16,7 @@ from automation1.internal.exceptions_gen import ControllerAxisFaultException, Co
 
 from BurnInPlotting import Burn_In_Plotting
 
-sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults

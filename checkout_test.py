@@ -18,12 +18,12 @@ from collections import deque
 
 from BurnIn import burn_in
 
-sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults
 from sheets_update import Sheets
-from RedirectStdout import RedirectStdout
+#from RedirectStdout import RedirectStdout
 
 class stage_checkout():
     '''

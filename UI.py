@@ -29,7 +29,7 @@ from secondary_UI import SecondaryUI
 from PyQt5.QtWidgets import QApplication
 
 
-sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
