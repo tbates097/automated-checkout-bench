@@ -114,9 +114,7 @@ class ConfigSizer:
 class PopupConfig(QtWidgets.QDialog, popup_config):
     """Instantiates and performs all configuration logic via Master db and logical adjustments"""
     def __init__(self, parent=None,stage=None):
-        print("PopupConfig")
         QtWidgets.QDialog.__init__(self)
-        print('PopupConfig initialize variables')
         self.stage = stage 
         #print(self.stage)
         self.spec_names = []
@@ -131,16 +129,7 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         self.motorType=""
         self.stageType=""
         self.configured = False
-        #if not ("-" in self.stage) or (not "XY-" in self.stage ):
-        #text_file = open(resource_path("Products.txt"), "r")
-        #names = text_file.readlines()
-        #print(names)
-        #new_names =[]
-        #for name in names:
-            #new_names.append(name.strip())
-        #text_file.close()
         
-        print('PopupConfig initialize UI')
         # Setup the UI
         self.setupUi(self)
 
@@ -152,17 +141,14 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         try:
             self.buttonBox.accepted.disconnect()
             self.buttonBox.rejected.disconnect()
-            print("Disconnected default buttonBox signals.")
         except TypeError:
             print("No default signals to disconnect.")
 
         # Connect buttons to our custom functions
         self.buttonBox.accepted.connect(self.handle_accept)
         self.buttonBox.rejected.connect(self.handle_reject)
-        print("Connected buttonBox to handle_accept and handle_reject.")
 
     def handle_accept(self):
-        print("handle_accept called. OK button clicked.")
         self.configured = True
         if not self.isVisible():
             print("⚠️ WARNING: handle_accept was triggered AFTER exec_() returned!")
@@ -171,7 +157,6 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
 
     def handle_reject(self):
         """Detect if reject() is being called too soon."""
-        print("❌ handle_reject called. Cancel button clicked.")
         
         # Print a stack trace to see where reject() is being triggered from
         import traceback
@@ -182,7 +167,6 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
 
     def reset_state(self):
         """Reset dialog state before showing."""
-        print("Resetting PopupConfig state...")
         self.configured = False
         self.spec_names = []
         self.spec_vals = []
@@ -690,7 +674,6 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         self.config_boxes[count].currentTextChanged.connect(lambda: self.checkRules(count,self.stage))
                 
     def return_values(parent = None, stage = None):
-        print("return_values")
         stage = stage.rstrip()
         if parent is None:
             parent = QtWidgets.QApplication.instance()
@@ -704,7 +687,7 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         QtWidgets.QApplication.processEvents()
         dialog.setWindowModality(QtCore.Qt.ApplicationModal)
         dialog.setModal(True)
-        print(f'Dialog Configured: {dialog.configured}')
+
         if dialog.configured is True:
             #print("configured")
             dialog.setVisible(False)
@@ -823,13 +806,11 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
        
         dialog.motor,dialog.mtr_spec_names,dialog.mtr_spec_vals,dialog.mtr_spec_dtype = dialog.getMotor()
 
-        print("🟡 Pausing before exec_() to verify execution order.")
         time.sleep(1)  # Give time to see if something else is closing it
         #loop = QtCore.QEventLoop()
         #dialog.finished.connect(loop.quit)
         result = dialog.exec_()
         #loop.exec_()  # Show the dialog and block until the user interacts
-        print(f"❌ Dialog exec_() completed with result: {result}")
 
         dialog.setDBTable(dialog.inputs_app,stage)
         dialog.config_options.select()
@@ -878,7 +859,6 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         
         del dialog
         if result == QtWidgets.QDialog.Accepted:
-            print('Accepted')
             return spec_names, spec_vals, smart_string
         else:
             print('Cancelled')
@@ -1003,7 +983,6 @@ class App(QtWidgets.QMainWindow):
     """Main Window"""
     def __init__(self):
         super(App, self).__init__()
-        print("App init")
         """Initialize all UI elements, mostly linking buttons to functions and tables to sources."""
        
     def readProducts(self):
@@ -3094,7 +3073,6 @@ class App(QtWidgets.QMainWindow):
             return
   
     def show_popup_config_dialog(self, stage=None):
-        print("show_popup_config_dialog")
         #self.clear_results()
         if stage == "":
             print("no stage to configure")
@@ -3102,7 +3080,6 @@ class App(QtWidgets.QMainWindow):
         else:
             # Call return_values and handle the result
             result = PopupConfig.return_values(stage=stage)
-            print('show_popup_config_dialog result:', result)
             if not result[0]:  # Check if configuration was canceled
                 print("Configuration canceled. Waiting for user inputs.")
                 return

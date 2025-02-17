@@ -4,8 +4,8 @@ NumMotors:1.0
 LinearFrictionForce:7.0 N
 WedgeRatio:1.0 
 MotorCurrentDerateFactor:1.0 
-PrmFbkType:SQR 
-PrmFbkFinalResolution:0.1 µm
+PrmFbkType:SIN 
+PrmFbkFinalResolution:20.0 µm
 PrmIncFbkRawResolution:20.0 µm
 PrmAbsFbkBits: 
 PrmAbsFbkInverted: 
@@ -15,10 +15,10 @@ AuxIncFbkRawResolution:0.0 µm
 AuxAbsFbkBits:0.0 
 AuxAbsFbkInverted: 
 LimitType:SWITCH 
-NominalTravel:200.0 mm
-LimitToLimitTravel:205.0 mm
-HardToHard-FirstContact:216.0 mm
-HardToHard-Compressed:220.0 mm
+NominalTravel:100.0 mm
+LimitToLimitTravel:105.0 mm
+HardToHard-FirstContact:116.0 mm
+HardToHard-Compressed:120.0 mm
 LimitDecelDistance:5.0 mm
 EndOfTravelCurrentThreshold:0.0 Apk
 MaxSpeed:2000.0 mm/s
@@ -26,7 +26,7 @@ DefaultSpeed:80.0 mm/s
 DefaultRampRate:1000.0 mm/s/s
 HomeSpeed:80.0 mm/s
 HomeRampRate:500.0 mm/s/s
-MovingMass:2.4 kg
-TotalMass:12.950000000000001 kg
+MovingMass:2.5 kg
+TotalMass:8.299999999999999 kg
 URL:https://www.aerotech.com/product/stages-actuators/pro165lm-mechanical-bearing-linear-motor-stage/ 
 ThermistorAvailable:1.0 
