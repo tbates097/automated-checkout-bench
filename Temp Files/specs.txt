@@ -1,13 +1,19 @@
 NumAxes:1.0 
-Motor:BLMC (Forcer Length : "-142", Winding Designation : "-A", Air Cooling : "-NC", Hall Effect Sensors : "-H", Preparation : "-S", Magnet Track : "-P") 
-NumMotors:1.0 
-LinearFrictionForce:7.0 N
+Motor:BMS100 (Winding Designation : "-A", Feedback : "-E2500H", Brake : "") 
+ScrewLead:5.0 mm
+ScrewInertia:5.9e-06 kg-m-m
+ScrewEfficiency:0.9 
+ScrewFriction:0.05 N-m
+LinearFrictionForce:3.0 N
+HasFoldback:0 
+FoldbackFriction:0.0 N-m
+TransmissionRatio:1.0 
 WedgeRatio:1.0 
 MotorCurrentDerateFactor:1.0 
-PrmFbkType:SIN 
-PrmFbkFinalResolution:20.0 µm
-PrmIncFbkRawResolution:20.0 µm
-PrmAbsFbkBits: 
+PrmFbkType:SQR 
+PrmFbkFinalCntsPerRev:10000.0 
+PrmIncFbkRawCntsPerRev:2500.0 
+PrmAbsFbkBits:0.0 
 PrmAbsFbkInverted: 
 AuxFbkType: 
 AuxFbkFinalResolution:0.0 µm
@@ -16,17 +22,18 @@ AuxAbsFbkBits:0.0
 AuxAbsFbkInverted: 
 LimitType:SWITCH 
 NominalTravel:100.0 mm
-LimitToLimitTravel:105.0 mm
-HardToHard-FirstContact:116.0 mm
-HardToHard-Compressed:120.0 mm
-LimitDecelDistance:5.0 mm
-EndOfTravelCurrentThreshold:0.0 Apk
-MaxSpeed:2000.0 mm/s
-DefaultSpeed:80.0 mm/s
+LimitToLimitTravel:111.6 mm
+HardToHard-FirstContact:125.0 mm
+HardToHard-Compressed:125.0 mm
+LimitDecelDistance:4.7 mm
+MaxSpeed:300.0 mm/s
+DefaultSpeed:40.0 mm/s
 DefaultRampRate:1000.0 mm/s/s
-HomeSpeed:80.0 mm/s
+HomeSpeed:40.0 mm/s
 HomeRampRate:500.0 mm/s/s
-MovingMass:2.5 kg
-TotalMass:8.299999999999999 kg
-URL:https://www.aerotech.com/product/stages-actuators/pro165lm-mechanical-bearing-linear-motor-stage/ 
+MovingMass:1.5 kg
+TotalMass:7.5 kg
+URL:https://www.aerotech.com/product/stages-actuators/pro165sl-and-sle-mechanical-bearing-ball-screw-stage/ 
+LimitPolarity:NC 
+HasBrake:0 
 ThermistorAvailable:1.0 

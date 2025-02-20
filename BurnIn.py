@@ -14,7 +14,8 @@ import tkinter as tk
 import automation1 as a1
 from automation1.internal.exceptions_gen import ControllerAxisFaultException, ControllerOperationException
 import threading
-from station_manager import StationManager
+from station_manager_instance import get_station_manager
+from exceptions import TestSequenceAbort
 
 from BurnInPlotting import Burn_In_Plotting
 
@@ -24,7 +25,7 @@ from Logger import TextLogger
 from DecodeFaults import decode_faults
 
 class burn_in():
-    def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file, release_stations_func):
+    def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file):
         #self.stage_type = stage_type
         self.speed = speed
         self.burnin_time = burnin_time
@@ -44,16 +45,9 @@ class burn_in():
         self.specs_dict = specs_dict
         self.stations = stations
         self.stage_log_file = stage_log_file
-        self.release_stations = release_stations_func  # Store the release function
         
         self.sample_rate = 1000
         
-        self.station_loggers = {}
-        for station_id in self.stations:
-            station_widget = self.secondary_ui.station_widgets.get(station_id)
-            if station_widget:
-                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
-
         # Define a mapping between axis names and station IDs
         self.axis_to_station_map = {
             'ST01': 1,
@@ -69,28 +63,39 @@ class burn_in():
             # Add more mappings as needed
         }
 
+        # Initialize station loggers without clearing existing text
+        self.station_loggers = {}
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            if station_id:
+                station_widget = self.secondary_ui.station_widgets.get(station_id)
+                if station_widget:
+                    # Don't clear the text widget, just create a logger for it
+                    self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"], clear_existing=False)
+
         self.window = tk.Tk()
         self.window.withdraw()
 
         self.cycle_log_position = None  # Add this line
-        
+        self.station_manager = get_station_manager()
     def station_print(self, message, station_id=None):
         """
-        Print a message to a specific station's text_widget or all stations.
-
-        Parameters:
-            message (str): The message to display.
-            station_id (int or None): The ID of the station to print to.
-                                      If None, print to all allocated stations.
+        Print a message to specific station(s) text_widget or all stations.
+        Only prints to stations that are part of this test.
         """
-        #print(f'Station ID: {station_id}')
-        if station_id is None:  # Print to all stations
-            for sid, logger in self.station_loggers.items():
-                logger.write(message + "\n")
-        elif station_id in self.station_loggers:  # Print to a specific station
-            self.station_loggers[station_id].write(message + "\n")
+        if station_id is None:
+            # Only print to stations involved in this test
+            for axis in self.test_axes:
+                sid = self.axis_to_station_map.get(axis)
+                if sid in self.station_loggers:
+                    self.station_loggers[sid].write(message + "\n")
         else:
-            print(f"[Warning] Invalid station_id {station_id}. Message: {message}")
+            if not isinstance(station_id, list):
+                station_id = [station_id]
+            
+            for sid in station_id:
+                if sid in self.station_loggers:
+                    self.station_loggers[sid].write(message + "\n")
 
     def reset_stdout(self):
         """
@@ -98,6 +103,28 @@ class burn_in():
         """
         sys.stdout = sys.__stdout__
 
+    def get_spec_value(self, spec_key):
+        """
+        Get a numerical value from specs_dict, handling both float and string formats.
+        
+        Args:
+            spec_key (str): The key to look up in specs_dict
+            
+        Returns:
+            float: The numerical value
+            
+        Raises:
+            ValueError: If the spec is not found or cannot be converted to float
+        """
+        spec = self.specs_dict.get(spec_key)
+        if spec is None:
+            raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
+        
+        try:
+            return spec if isinstance(spec, float) else float(spec.split()[0])
+        except (AttributeError, ValueError) as e:
+            raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
+        
     def initialize_burnin(self, station_controllers):
         """Initialize burn-in with station controllers."""
         self.station_controllers = station_controllers
@@ -106,10 +133,33 @@ class burn_in():
         self.list_velocity = []
         
         for axis in self.test_axes:
-            self.list_commands.append(float(self.specs_dict.get('NominalTravel').split()[0]) / 2)
+            self.list_commands.append(self.get_spec_value('NominalTravel') / 2)
             self.list_velocity.append(self.speed)
+        try:
+            self.movetostart()
+            time.sleep(2)
+        except TestSequenceAbort as e:
+            messagebox.showerror("Test Sequence Aborted", str(e))
+            self.station_print(f"Test sequence aborted: {str(e)}")
+        try:
+            self.increase_speed()
+            time.sleep(2)
+        except TestSequenceAbort as e:
+            messagebox.showerror("Test Sequence Aborted", str(e))
+            self.station_print(f"Test sequence aborted: {str(e)}")
+        try:
+            self.four_hour_burnin()
         
-        self.movetostart()
+            plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations, self.test_axes)
+            plot.generate_plots() 
+
+            messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')
+
+        except TestSequenceAbort as e:
+            messagebox.showerror("Test Sequence Aborted", str(e))
+            self.station_print(f"Test sequence aborted: {str(e)}")
+        finally:
+            self.perform_burnin_cleanup()
 
     def movetostart(self):
         """Move all axes to their starting positions in parallel."""
@@ -131,7 +181,7 @@ class burn_in():
         
         # Start all axis moves in parallel
         for axis in self.test_axes:
-            thread = threading.Thread(target=move_axis, args=(axis,))
+            thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -140,35 +190,34 @@ class burn_in():
             thread.join()
         time.sleep(2)
         
-        self.increase_speed()
-        
     def increase_speed(self):
         speed_increment = float(self.speed/5)      
         list_speed = [i-i for i in self.list_velocity]
         count = 1
         
         while count <= 5:
-            list_speed = [i+speed_increment for i in list_speed]
-            cycle_time = self.nominal_travel / list_speed[0]
-            
-            dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
-            
-            self.forward_move(dwell, list_speed)
-                
-            count += 1
-            if count < 5:
+            try:
                 list_speed = [i+speed_increment for i in list_speed]
                 cycle_time = self.nominal_travel / list_speed[0]
                 
                 dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
-            
-            self.reverse_move(dwell, list_speed)
-            
-            count += 1
+                
+                self.forward_move(dwell, list_speed)
+                    
+                count += 1
+                if count < 5:
+                    list_speed = [i+speed_increment for i in list_speed]
+                    cycle_time = self.nominal_travel / list_speed[0]
+                    
+                    dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
+                
+                self.reverse_move(dwell, list_speed)
+                
+                count += 1
+            except TestSequenceAbort as e:
+                return
             
         time.sleep(1)
-
-        self.four_hour_burnin()
         
     def round_to_nearest(self, value, multiple):
         return round(value / multiple) * multiple
@@ -209,12 +258,13 @@ class burn_in():
         # Start data collection threads
         threads = []
         for axis in self.test_axes:
-            thread = threading.Thread(target=collect_axis_data, args=(axis,))
+            thread = self.create_tracked_thread(target=collect_axis_data, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
-        
-        # Execute moves in separate thread
-        move_thread = threading.Thread(target=execute_moves)
+
+        # Execute moves in separate thread (no axis needed as it's just coordinating)
+        move_thread = self.create_tracked_thread(target=execute_moves, args=())
+        threads.append(move_thread)
         move_thread.start()
         
         # Wait for all threads to complete
@@ -243,8 +293,8 @@ class burn_in():
         cycle = 1
         data_cycle = 1
         
-        try:
-            while cycle <= self.cycles:
+        while cycle <= self.cycles:
+            try:
                 self.current_date = datetime.date.today()
                 self.current_time = datetime.datetime.now().time()
                 
@@ -261,15 +311,8 @@ class burn_in():
                     self.reverse_move(self.dwell, self.list_velocity)
                 
                 cycle += 1
-                
-        except Exception as e:
-            self.handle_burnin_error(e)
-            return
-        
-        plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations, self.test_axes)
-        plot.generate_plots()
-        
-        messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')
+            except TestSequenceAbort as e:
+                return
 
     def forward_move(self, dwell, speed):
         """Execute forward move for all axes."""
@@ -283,22 +326,24 @@ class burn_in():
                     [self.list_commands[self.test_axes.index(axis)]], 
                     [speed[self.test_axes.index(axis)]]
                 )
-            except (ControllerAxisFaultException, ControllerOperationException):
+            except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
-                    controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.handle_faults(faults_per_axis)
+                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
         
             time.sleep(dwell)
             
             try:
                 controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException):
+            except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
-                    controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.handle_faults(faults_per_axis)
+                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
         
         for axis in self.test_axes:
-            thread = threading.Thread(target=move_axis, args=(axis,))
+            thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -318,22 +363,24 @@ class burn_in():
                     [self.list_commands[self.test_axes.index(axis)] * -1],  # Negative for reverse
                     [speed[self.test_axes.index(axis)]]
                 )
-            except (ControllerAxisFaultException, ControllerOperationException):
+            except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
-                    controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.handle_faults(faults_per_axis)
+                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
         
             time.sleep(dwell)
             
             try:
                 controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException):
+            except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
-                    controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                    self.handle_faults(faults_per_axis)
+                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
         
         for axis in self.test_axes:
-            thread = threading.Thread(target=move_axis, args=(axis,))
+            thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -432,6 +479,7 @@ class burn_in():
                     'An Axis Fault Occurred',
                     f'Axis {axis} has the following faults: {decoded_faults[axis]}'
                 )
+                self.fault_log.error(f"Burn-in error on axis {axis}: {decoded_faults[axis]}")
 
     def _log_cycle_progress(self, cycle):
         cycle_log_message = f'Cycle Number: {cycle}/{self.cycles} at {self.current_date} {self.current_time}'
@@ -446,27 +494,118 @@ class burn_in():
                 log_file.write(cycle_log_message + '\n')
 
     def handle_burnin_error(self, error, axis):
-        """Handle errors during burn-in for a specific axis."""
-        station_id = self.axis_to_station_map.get(axis)
-        self.station_print(f"Error on axis {axis}: {str(error)}", station_id=station_id)
-        self.fault_log.error(f"Burn-in error on axis {axis}: {str(error)}")
+        """Handle errors during burn-in."""
+        self.stage_info.info(f"Handling burn-in error for axis {axis}")
         
-        # Remove this axis from active testing
+        # Release just this station
+        station_id = self.axis_to_station_map[axis]  # Get station directly from the map
+        self.stage_info.info(f"Found station_id: {station_id} for axis {axis}")
+        
+        if station_id:
+            station_manager = get_station_manager()
+            self.stage_info.info(f"Releasing station {station_id}")
+            station_manager.release_station(station_id)
+            station_manager.refresh_station_status()
+            self.secondary_ui.update_station_status(station_id, running=False, serial="")
+            controller = self.station_controllers[axis]
+            controller.runtime.commands.motion.disable([axis])
+            
+            # Remove this axis from testing
+            if axis in self.test_axes:
+                self.test_axes.remove(axis)
+                self.stage_info.info(f"Removed {axis} from test_axes")
+            if axis in self.station_controllers:
+                del self.station_controllers[axis]
+                self.stage_info.info(f"Removed {axis} from station_controllers")
+        else:
+            self.stage_info.error(f"Could not find station_id for axis {axis}")
+
+    def create_tracked_thread(self, target, axis=None, station_id=None, args=()):
+        """
+        Create a thread and track it for cleanup.
+        
+        Args:
+            target: The function to run in the thread
+            axis: The axis associated with the thread (optional for non-motion threads)
+            station_id: The station ID associated with the thread (optional)
+            args: Arguments to pass to the target function
+        """
+        thread = threading.Thread(target=target, args=args)
+        thread.axis = axis
+        thread.station_id = station_id or (self.axis_to_station_map.get(axis) if axis else None)
+        if not hasattr(self, 'active_threads'):
+            self.active_threads = []
+        self.active_threads.append(thread)
+        return thread
+
+    def cleanup_data_structures(self, station_id, axis):
+        """
+        Clean up data structures and threads for a station during burn-in
+        """
+        # Clear axis-related data structures
         if axis in self.test_axes:
             self.test_axes.remove(axis)
         
-        # Release just this station
-        station = next((s for s in self.stations if self.station_states[s]["axis_name"] == axis), None)
-        if station:
-            self.release_station = StationManager.release_station(station)
-            self.release_station()
-        # If no axes left, end the test
-        if not self.test_axes:
-            messagebox.showerror("Test Stopped", "All axes have encountered errors. Ending test.")
-            return False
-        
-        return True
+        if axis in self.station_controllers:
+            del self.station_controllers[axis]
 
+        # Clear station-related data structures
+        if station_id in self.station_loggers:
+            del self.station_loggers[station_id]
+
+        # Clear burn-in specific data
+        if hasattr(self, 'axis_data') and axis in self.axis_data:
+            del self.axis_data[axis]
+        
+        # Thread cleanup
+        if hasattr(self, 'active_threads'):
+            threads_to_remove = []
+            for thread in self.active_threads:
+                if (thread.axis == axis or 
+                    (thread.station_id is not None and thread.station_id == station_id)):
+                    if thread.is_alive():
+                        thread.join(timeout=1.0)
+                    threads_to_remove.append(thread)
+            
+            for thread in threads_to_remove:
+                self.active_threads.remove(thread)
+
+    def perform_burnin_cleanup(self):
+        """
+        Perform cleanup operations after burn-in completion or abort.
+        """
+        current_thread = threading.current_thread()
+        station_manager = get_station_manager()
+
+        # Clean up each station/axis that was being tested
+        for axis in list(self.test_axes):  # Create a copy of list since we'll modify it
+            try:
+                if axis not in self.station_controllers:
+                    continue
+                
+                controller = self.station_controllers[axis]
+                controller.runtime.data_collection.stop()
+                station_id = self.axis_to_station_map.get(axis)
+                
+                if station_id and station_id in self.station_loggers:  # Only cleanup stations that belong to this test
+                    try:
+                        # Print status messages BEFORE cleanup
+                        self.station_print("Cleanup complete for station", station_id=station_id)
+                        self.station_print(f"Station {station_id} has been released", station_id=station_id)
+                        
+                        # Update UI and release station only for stations in this test
+                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                        station_manager.release_station(station_id)
+                        station_manager.refresh_station_status()
+                        
+                        # Do data structure cleanup last
+                        self.cleanup_data_structures(station_id, axis)
+                        
+                    except Exception as cleanup_error:
+                        self.station_print(f"Error during cleanup: {str(cleanup_error)}", station_id=station_id)
+                        self.fault_log.error(f"Cleanup error for station {station_id}: {str(cleanup_error)}")
+            except Exception as e:
+                self.fault_log.error(f"Error during cleanup for axis {axis}: {str(e)}")
 # =============================================================================
 #     def init_logger(self):
 #         # Create the root directory for logs if it doesn't exist

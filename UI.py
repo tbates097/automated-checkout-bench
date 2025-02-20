@@ -28,6 +28,7 @@ from BallscrewSizer import App
 from secondary_UI import SecondaryUI
 from PyQt5.QtWidgets import QApplication
 from station_manager import StationManager
+from station_manager_instance import set_station_manager
 
 
 #sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
@@ -35,6 +36,7 @@ sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
 station_dict = {
+    'ST01': '192.168.1.15',
     'ST02': '192.168.1.16',
     'ST03': '192.168.1.17'
 }
@@ -75,7 +77,7 @@ def load_user_inputs():
 def allocate_stations(num_stations, program_id):
     """Allocate the required number of free stations, or return None if not enough are available."""
     try:
-        print(f"Attempting to allocate {num_stations} stations")  # Debug print
+        #print(f"Attempting to allocate {num_stations} stations")  # Debug print
         # Try to acquire the lock with a timeout of 5 seconds
         if not station_lock.acquire(timeout=5):
             print("Could not acquire station lock - timeout")
@@ -85,7 +87,7 @@ def allocate_stations(num_stations, program_id):
             station for station in station_states.items() 
             if station[1]["status"] == "free"
         ]
-        print(f"Found {len(free_stations)} free stations: {free_stations}")  # Debug print
+        #print(f"Found {len(free_stations)} free stations: {free_stations}")  # Debug print
         
         if len(free_stations) >= num_stations:
             allocated = [station[0] for station in free_stations[:num_stations]]
@@ -105,7 +107,7 @@ def allocate_stations(num_stations, program_id):
     finally:
         try:
             station_lock.release()
-            print("Released station lock")
+            #print("Released station lock")
         except RuntimeError:
             print("Lock was not acquired")
             pass
@@ -156,7 +158,7 @@ def UI():
     
     # Initialize StationManager
     station_manager = StationManager(window)
-    station_manager.start()
+    set_station_manager(station_manager)
     
     # Load stored user inputs
     stored_data = load_user_inputs()
@@ -305,8 +307,13 @@ def UI():
                         # Assign serial number to each station
                         text_widget = secondary_ui.station_widgets[station]["txt_logs"]
                         station_states[station]["serial_number"] = serial_number
-                        sys.stdout = TextLogger(text_widget)
-                        #print(f"Running test on Station {station} with Serial Number: {serial_number}")
+                        # Instead of creating new TextLogger, let's use the existing one from the station
+                        if station in secondary_ui.station_loggers:
+                            sys.stdout = secondary_ui.station_loggers[station]
+                        else:
+                            # Only create new logger if one doesn't exist
+                            secondary_ui.station_loggers[station] = TextLogger(text_widget, clear_existing=False)
+                            sys.stdout = secondary_ui.station_loggers[station]
                     secondary_ui.update_station_status(stations, running=True, serial=serial_number)
                     user_data = {
                                 "speed": var_speed.get(),
@@ -326,6 +333,8 @@ def UI():
                 finally:
                     # Always release stations when done
                     station_manager.release_stations(allocated_stations)
+                    secondary_ui.update_station_status(stations, running=False, serial="")
+                    print(f"Stations {stations} are now free.")
                     window.after(0, lambda: btn_run.config(state=tk.NORMAL))
 
             # Disable run button during test
@@ -345,7 +354,7 @@ def UI():
         Re-enables the 'Run' button in the UI.
         """
         btn_run.config(state=tk.NORMAL)
-        print("Run button re-enabled.")    
+        #print("Run button re-enabled.")    
     
     def test(program_id, serial_number, station_controllers):
         """Main test function in UI.py"""
@@ -376,13 +385,13 @@ def UI():
             initialized_controllers = {}
             for axis_name, ip_address in station_controllers.items():
                 try:
-                    print(f"Connecting to {axis_name} at {ip_address}...")
+                    #print(f"Connecting to {axis_name} at {ip_address}...")
                     controller = a1.Controller.connect(host=ip_address)
-                    print("Controller connected, starting...")
+                    #print("Controller connected, starting...")
                     controller.start()
                     initialized_controllers[axis_name] = controller
                     print(f"Successfully connected to {axis_name} at {ip_address}")
-                    print(f"{axis_name} running: {controller.is_running}")
+                    #print(f"{axis_name} running: {controller.is_running}")
                 except Exception as e:
                     # Clean up any initialized controllers
                     for ctrl in initialized_controllers.values():
@@ -397,6 +406,7 @@ def UI():
             test_axes = allocated_stations
             stations = [int(station[2:]) for station, state in station_manager.station_states.items()
                         if state["program_id"] == program_id]
+            
             # Run the test
             stage_test = stage_checkout(
                 stage_type, speed, BI_time, job, op, 
@@ -404,7 +414,7 @@ def UI():
                 test_axes, duty_cycle, specs_dict, 
                 absolute, stations
             )
-            print(f'Station Controllers-test: {station_controllers}')
+            #print(f'Station Controllers-test: {station_controllers}')
             stage_test.test(reenable_run_button, initialized_controllers)  
 
         except Exception as e:

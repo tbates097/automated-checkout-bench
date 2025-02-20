@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import Text
 import threading
-
+from Logger import TextLogger
 
 class SecondaryUI:
     def __init__(self):
@@ -12,6 +12,7 @@ class SecondaryUI:
         self.window.configure(bg="#1e1e1e")  # Night mode background
 
         self.station_widgets = {}  # Store widgets for each station
+        self.station_loggers = {}  # Add this to store loggers
         self.lock = threading.Lock()  # Ensure thread-safe updates
 
         # Configure grid layout for consistent frame scaling
@@ -96,6 +97,10 @@ class SecondaryUI:
             )
             txt_logs.pack(expand=True, fill="both", padx=5, pady=5)
 
+            # Create logger for this station if it doesn't exist
+            if i not in self.station_loggers:
+                self.station_loggers[i] = TextLogger(txt_logs, clear_existing=False)
+
             # Save references to widgets
             self.station_widgets[i] = {
                 "frame": frame,
@@ -103,18 +108,23 @@ class SecondaryUI:
                 "indicator": indicator,
                 "entry_serial": entry_serial,
                 "txt_logs": txt_logs,
+                "logger": self.station_loggers[i]  # Store reference to logger
             }
 
     def update_station_status(self, stations, running=False, serial=None):
         """
-        Update the status and serial number of multiple stations.
+        Update the status and serial number of one or multiple stations.
 
         Parameters:
-            stations (list[int]): List of station IDs (1-10).
+            stations (int or list[int]): Single station ID or list of station IDs (1-10).
             running (bool): True if the stations are running, False otherwise.
             serial (str): Optional serial number to display (applies to all stations).
         """
         with self.lock:
+            # Convert single station to list if necessary
+            if not isinstance(stations, list):
+                stations = [stations]
+                
             for station in stations:
                 widget = self.station_widgets.get(station)
                 if widget:
@@ -123,19 +133,23 @@ class SecondaryUI:
                     widget["indicator"].config(bg=color)
 
                     # Update serial number
-                    if serial:
+                    if serial is not None:
                         widget["entry_serial"].delete(0, tk.END)
                         widget["entry_serial"].insert(0, serial)
 
     def append_logs(self, stations, message):
         """
-        Append a message to the text widgets of multiple stations.
+        Append a message to the text widgets of one or multiple stations.
 
         Parameters:
-            stations (list[int]): List of station IDs (1-10).
+            stations (int or list[int]): Single station ID or list of station IDs (1-10).
             message (str): Log message to append.
         """
         with self.lock:
+            # Convert single station to list if necessary
+            if not isinstance(stations, list):
+                stations = [stations]
+                
             for station in stations:
                 widget = self.station_widgets.get(station)
                 if widget:

@@ -14,10 +14,12 @@ import tkinter as tk
 from tkinter import messagebox
 import time
 import re
+import datetime
+from datetime import datetime
 from collections import deque
 import threading
-from station_manager import StationManager
-
+from station_manager_instance import get_station_manager
+from exceptions import TestSequenceAbort
 from BurnIn import burn_in
 
 #sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
@@ -26,6 +28,8 @@ from Logger import TextLogger
 from DecodeFaults import decode_faults
 from sheets_update import Sheets
 #from RedirectStdout import RedirectStdout
+
+_thread_lock = threading.Lock()
 
 class stage_checkout():
     '''
@@ -66,15 +70,6 @@ class stage_checkout():
         
         self.sample_rate = 1000
         
-        # Initialize station loggers
-        self.station_loggers = {}
-        print(f'Stations: {self.stations}')
-        for station_id in self.stations:
-            print(f'Station ID: {station_id}')
-            station_widget = self.secondary_ui.station_widgets.get(station_id)
-            if station_widget:
-                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
-
         # Define mapping between axis names and station IDs
         self.axis_to_station_map = {
             'ST01': 1,
@@ -88,27 +83,80 @@ class stage_checkout():
             'ST09': 9,
             'ST10': 10
         }
+
+        # Initialize station loggers without clearing existing text
+        self.station_loggers = {}
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            if station_id:
+                station_widget = self.secondary_ui.station_widgets.get(station_id)
+                if station_widget:
+                    # Don't clear the text widget, just create a logger for it
+                    self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"], clear_existing=False)
         
         self.window = tk.Tk()
         self.window.withdraw()
         
+        self.station_manager = get_station_manager()
+        
+        # Initialize hall sensor dictionaries
+        self.hall_a = {}
+        self.hall_b = {}
+        self.hall_c = {}
+        self.hall_states = {}
+        self.pri_fbk = {}
+        self.ccw_fault = {}
+        self.cw_fault = {}
+        self.pos_error_fault = {}
+        self.over_current_fault = {}
+        
+        # Initialize unique state tracking dictionaries
+        self.unique_hall_states = {}
+        
+        # Create a separate logger for each station
+        self.fault_log = logging.getLogger('fault_logger')
+        self.st02_log = logging.getLogger('ST02_logger')
+        self.st03_log = logging.getLogger('ST03_logger')
+        
+        # Configure each logger with its own file handler
+        fault_handler = logging.FileHandler('logs with hall states.txt')
+        st02_handler = logging.FileHandler('ST02_hall_states.txt')
+        st03_handler = logging.FileHandler('ST03_hall_states.txt')
+        
+        # Set format for the logs
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fault_handler.setFormatter(formatter)
+        st02_handler.setFormatter(formatter)
+        st03_handler.setFormatter(formatter)
+        
+        # Add handlers to loggers
+        self.fault_log.addHandler(fault_handler)
+        self.st02_log.addHandler(st02_handler)
+        self.st03_log.addHandler(st03_handler)
+        
+        # Set log levels
+        self.fault_log.setLevel(logging.INFO)
+        self.st02_log.setLevel(logging.INFO)
+        self.st03_log.setLevel(logging.INFO)
+        
     def station_print(self, message, station_id=None):
         """
-        Print a message to a specific station's text_widget or all stations.
-
-        Parameters:
-            message (str): The message to display.
-            station_id (int or None): The ID of the station to print to.
-                                      If None, print to all allocated stations.
+        Print a message to specific station(s) text_widget or all stations.
+        Only prints to stations that are part of this test.
         """
-        #print(f'Station ID: {station_id}')
-        if station_id is None:  # Print to all stations
-            for sid, logger in self.station_loggers.items():
-                logger.write(message + "\n")
-        elif station_id in self.station_loggers:  # Print to a specific station
-            self.station_loggers[station_id].write(message + "\n")
+        if station_id is None:
+            # Only print to stations involved in this test
+            for axis in self.test_axes:
+                sid = self.axis_to_station_map.get(axis)
+                if sid in self.station_loggers:
+                    self.station_loggers[sid].write(message + "\n")
         else:
-            print(f"[Warning] Invalid station_id {station_id}. Message: {message}")
+            if not isinstance(station_id, list):
+                station_id = [station_id]
+            
+            for sid in station_id:
+                if sid in self.station_loggers:
+                    self.station_loggers[sid].write(message + "\n")
 
     def reset_stdout(self):
         """
@@ -158,6 +206,28 @@ class stage_checkout():
             return spec if isinstance(spec, float) else float(spec.split()[0])
         except (AttributeError, ValueError) as e:
             raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
+    
+    def create_tracked_thread(self, target, axis, station_id=None, args=()):
+        """
+        Create a thread and track it for cleanup.
+        
+        Args:
+            target: The function to run in the thread
+            axis: The axis associated with the thread
+            station_id: The station ID associated with the thread (optional)
+            args: Arguments to pass to the target function
+            
+        Returns:
+            thread: The created thread object
+        """
+        thread = threading.Thread(target=target, args=args)
+        thread.axis = axis  # Tag the thread with its axis
+        thread.station_id = station_id or self.axis_to_station_map.get(axis)  # Tag with station_id
+        if not hasattr(self, 'active_threads'):
+            self.active_threads = []
+        self.active_threads.append(thread)
+        return thread
+
     def test(self, reenable_run_button, station_controllers):
         """
         Main entry point for the checkout process.
@@ -165,11 +235,13 @@ class stage_checkout():
         Args:
             station_controllers (dict): Dictionary mapping axis names to their respective controllers
         """
-        self.station_print(f"Starting test for {self.job}.")
         self.station_controllers = station_controllers
-        print(f'Station Controllers-checkout_test: {self.station_controllers}')
         self.reenable_run_button = reenable_run_button
+        self.reenable_run_button()
         # Initialize data dictionary for each axis
+        print(f'Test Axes: {self.test_axes}')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print(f"Starting test for {self.job}.", station_id=station_id)
         self.data = {}
         for axis in self.test_axes:
             self.data[f"Axis: {axis}"] = {
@@ -184,7 +256,7 @@ class stage_checkout():
                 "Absolute value at CCW EOT": "",
                 "Absolute Position Offset": ""
             }
-
+        
         self.init_logger()
         self.fault_log.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
         self.stage_info.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
@@ -198,6 +270,8 @@ class stage_checkout():
         
         # Set the nominal positions and velocities for each axis
         for axis in self.test_axes:
+            self.data[f"Axis: {axis}"]["Testing Technician"] = self.op
+            self.data[f"Axis: {axis}"]["Date of Testing"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
                 nominal_travel = self.get_spec_value('NominalTravel')
                 self.list_commands_ccw_pos.append(nominal_travel / 2 * -1)
@@ -206,46 +280,171 @@ class stage_checkout():
                 self.list_velocity.append(self.speed)
                 self.list_low_velocity.append(0.5)
             except ValueError as e:
-                self.station_print(f"Error: {e}")
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Error: {e}", station_id=station_id)
                 return
 
         self.zero_home_offset = 0
         self.max_current_clamp = 10
         self.low_current_clamp = 3.5
-        print(f'Nominal Travel: {self.specs_dict.get("NominalTravel")}')
+
         self.nominal_travel = self.specs_dict.get('NominalTravel')
-        print("Configuring initial parameters for each axis")
+        self.mdk_path = fr'C:\Users\tbates\Documents\Automation1\{self.stage_type}.mcd'
         # Configure initial parameters for each axis
-        print(f'Test Axes: {self.test_axes}')
         for axis in self.test_axes:
-            print(f'Axis: {axis}')
-            controller = self.station_controllers[axis]  # Get the specific controller for this axis
-            print(f'Controller: {controller}')
+            controller = self.station_controllers[axis]
+            controller.upload_mcd_to_controller(self.mdk_path, should_include_files=True, should_include_configuration=True, erase_controller=False)
             if self.absolute:
                 self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
             else:
                 self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
         
         # Reset all controllers in parallel
-        threads = []
-        for axis in self.test_axes:
-            def reset_controller(axis):
-                controller = self.station_controllers[axis]
-                controller.reset()
-            thread = threading.Thread(target=reset_controller, args=(axis,))
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for all resets to complete
-        for thread in threads:
-            thread.join()
-        time.sleep(10)  # Wait for all controllers to initialize
-
+        self.reset_controllers()
+        time.sleep(5)
         # Wait for the controller to finish processing the previous commands
-        time.sleep(2)
+        # Enable the stages
         self.enable_stages()
         time.sleep(5)
+        # Check Halls
+        for axis in self.test_axes:
+            controller = self.station_controllers[axis]
+            commutation = controller.runtime.parameters.axes[axis].motor.commutationinitializationsetup.value
+        if commutation == 0:
+            try:
+                self.check_halls()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+        # Split the test to Absolute and Incremental
+        if self.absolute:
+            try:
+                # Check Hardstop
+                self.absolute_hardstop()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")    
+            try:
+                # Set Offset
+                self.calculate_home_offset()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Set limits
+                self.software_limits()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Burn in
+                BI = burn_in(
+                        self.speed, 
+                        self.burnin_time, 
+                        self.secondary_ui, 
+                        self.window, 
+                        self.test_axes, 
+                        self.nominal_travel, 
+                        self.fault_log, 
+                        self.stage_info, 
+                        self.duty_cycle, 
+                        self.job_log_dir, 
+                        self.stage_type, 
+                        self.absolute, 
+                        self.job, 
+                        self.op, 
+                        self.comments, 
+                        self.specs_dict, 
+                        self.stations, 
+                        self.stage_log_file
+                    )
+                # Pass the station controllers to burn-in
+                BI.initialize_burnin(self.station_controllers)
 
+                populate_sheet = Sheets(self.job, self.data)
+                populate_sheet.populate_sheet()
+
+                time.sleep(5)
+                self.home_stages()
+                station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+                self.station_print("All tests completed.", station_id=station_id)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            finally:
+                self.perform_test_cleanup()   # Any final cleanup if needed
+        else:
+            try:
+                # Home Stages
+                self.home_stages()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Check Hardstop
+                self.check_hardstop()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Calculate Home Offset
+                self.calculate_home_offset()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Set limits
+                self.software_limits()
+                time.sleep(5)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            try:
+                # Burn in
+                # Initialize burn-in with the station controllers
+                BI = burn_in(
+                    self.speed, 
+                    self.burnin_time, 
+                    self.secondary_ui, 
+                    self.window, 
+                    self.test_axes, 
+                    self.nominal_travel, 
+                    self.fault_log, 
+                    self.stage_info, 
+                    self.duty_cycle, 
+                    self.job_log_dir, 
+                    self.stage_type, 
+                    self.absolute, 
+                    self.job, 
+                    self.op, 
+                    self.comments, 
+                    self.specs_dict, 
+                    self.stations, 
+                    self.stage_log_file
+                    )
+                # Pass the station controllers to burn-in
+                BI.initialize_burnin(self.station_controllers)
+                print(f'Data To Sheet: {self.data}')
+                populate_sheet = Sheets(self.job, self.data)
+                populate_sheet.populate_sheet()
+
+                time.sleep(5)
+                self.home_stages()
+                station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+                self.station_print("All tests completed.", station_id=station_id)
+            except TestSequenceAbort as e:
+                messagebox.showerror("Test Sequence Aborted", str(e))
+                self.station_print(f"Test sequence aborted: {str(e)}")
+            finally:
+                self.perform_test_cleanup()
+            
     def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None):
         """
         Configure parameters for a specific axis on its controller.
@@ -265,7 +464,8 @@ class stage_checkout():
                 configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = home_offset
             else:
                 configured_parameters.axes[axis].homing.homeoffset.value = home_offset
-            
+        if home_offset == 0:
+            configured_parameters.axes[axis].homing.homeoffset.value = 0
         if current_clamp:
             configured_parameters.axes[axis].protection.limitdebouncedistance.value = 1
             configured_parameters.axes[axis].protection.maxcurrentclamp.value = current_clamp
@@ -337,13 +537,22 @@ class stage_checkout():
                                     self.station_print('Turning off software limits and resuming test.', station_id=station_id)
                                     controller = self.station_controllers[axis]
                                     self.params(controller, axis, limit='software off')
+                                    self.reset_controllers()
                                     self.home_stages()
                                     self.check_hardstop()
                                 else:
-                                    self.release_station = StationManager.release_station(station_id)
-                                    self.release_station()
-                                    reenable_run_button()
-                                    sys.exit()
+                                    self.release_station = self.station_manager.release_station
+                                    self.release_station(station_id)
+                                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                                    controller = self.station_controllers[axis]
+                                    controller.runtime.commands.motion.disable([axis])
+
+                                    if axis in updated_connected_axes:
+                                        updated_connected_axes.remove(axis)
+                                    if axis in self.station_controllers:
+                                        del self.station_controllers[axis]
+                    
+                                    continue  # Skip rest of processing for this axis
                             else:
                                 confirm = messagebox.askyesno(
                                     'An Axis Fault Occurred',
@@ -359,10 +568,18 @@ class stage_checkout():
                                 else:
                                     # Re-enable the "Run" button and stop further execution
                                     self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                                    self.release_station = StationManager.release_station(station_id)
-                                    self.release_station()
-                                    reenable_run_button()  # Call the callback to re-enable the button
-                                    sys.exit()
+                                    self.release_station = self.station_manager.release_station
+                                    self.release_station(station_id)
+                                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                                    controller = self.station_controllers[axis]
+                                    controller.runtime.commands.motion.disable([axis])
+
+                                    if axis in updated_connected_axes:
+                                        updated_connected_axes.remove(axis)
+                                    if axis in self.station_controllers:
+                                        del self.station_controllers[axis]
+                                    
+                                    continue  # Skip rest of processing for this axis
             else:
                 if faults:
                     for fault in faults:
@@ -375,13 +592,21 @@ class stage_checkout():
                                 self.station_print('Turning off software limits and resuming test.', station_id=station_id)
                                 controller = self.station_controllers[axis]
                                 self.params(controller, axis, limit='software off')
+                                self.reset_controllers()
                                 self.home_stages()
                                 self.check_hardstop()
                             else:
-                                self.release_station = StationManager.release_station(station_id)
-                                self.release_station()
-                                reenable_run_button()  # Call the callback to re-enable the button
-                                sys.exit()
+                                self.release_station = self.station_manager.release_station
+                                self.release_station(station_id)
+                                self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                                controller = self.station_controllers[axis]
+                                controller.runtime.commands.motion.disable([axis])
+                                if axis in updated_connected_axes:
+                                    updated_connected_axes.remove(axis)
+                                if axis in self.station_controllers:
+                                    del self.station_controllers[axis]
+                                
+                                continue  # Skip rest of processing for this axis
                     
                     confirm = messagebox.askyesno(
                         'An Axis Fault Occurred',
@@ -397,13 +622,22 @@ class stage_checkout():
                     else:
                         # Re-enable the "Run" button and stop further execution
                         self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                        self.release_station = StationManager.release_station(station_id)
-                        self.release_station()
-                        reenable_run_button()  # Call the callback to re-enable the button
-                        sys.exit()
+                        self.release_station = self.station_manager.release_station
+                        self.release_station(station_id)
+                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                        controller = self.station_controllers[axis]
+                        controller.runtime.commands.motion.disable([axis])
+                        if axis in updated_connected_axes:
+                            updated_connected_axes.remove(axis)
+                        if axis in self.station_controllers:
+                            del self.station_controllers[axis]
+                        
+                        continue  # Skip rest of processing for this axis
                     
         # Update the connected_axes with the updated list
         self.test_axes = updated_connected_axes
+        if not self.test_axes:
+            raise TestSequenceAbort("Please address faults on affected axes. Ending test.")
         
         # Update the commands for the remaining axes
         try:
@@ -420,13 +654,18 @@ class stage_checkout():
                 self.list_velocity.append(self.speed)
                 self.list_low_velocity.append(0.5)
         except ValueError as e:
-            self.station_print(f"Error updating commands: {e}")
+            station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+            self.station_print(f"Error updating commands: {e}", station_id=station_id)
             return
             
     def enable_stages(self):
         """Enable all stages in parallel and handle any faults."""
-        self.station_print('Enabling Axes')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Enabling Axes', station_id=station_id)
         
+        # Create a copy of the connected_axes list to safely remove unused axes
+        updated_connected_axes = list(self.test_axes)
+
         # Enable all axes in parallel
         threads = []
         def enable_single_axis(axis):
@@ -468,13 +707,23 @@ class stage_checkout():
                         else:
                             # Handle case where axis is in use
                             self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                            self.release_station = StationManager.release_station(station_id)
-                            self.release_station()
-                            self.reenable_run_button()  # Call the callback to re-enable the button
-                            sys.exit()
+                            self.release_station = self.station_manager.release_station
+                            self.release_station(station_id)
+                            self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                            controller = self.station_controllers[axis]
+                            controller.runtime.commands.motion.disable([axis])
+                            if axis in updated_connected_axes:
+                                updated_connected_axes.remove(axis)
+                            if axis in self.station_controllers:
+                                del self.station_controllers[axis]
+            
+                            continue  # Skip rest of processing for this axis
                         
                 # Update the connected_axes with the updated list
                 self.test_axes = updated_connected_axes
+                if not self.test_axes:
+                    raise TestSequenceAbort("Please address faults on affected axes. Ending test.")
+                
                 nominal_travel = self.get_spec_value('NominalTravel')
                 self.list_commands_ccw_pos = []
                 self.list_commands_cw_pos = []
@@ -499,50 +748,50 @@ class stage_checkout():
                 
                     fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
                     decoded_faults = fault_init.get_fault()
-                    sys.exit()
-        
+                    if axis in updated_connected_axes:
+                        updated_connected_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+
         # Start enable threads
         for axis in self.test_axes:
-            thread = threading.Thread(target=enable_single_axis, args=(axis,))
+            thread = self.create_tracked_thread(target=enable_single_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
         # Wait for all enables to complete
         for thread in threads:
             thread.join()
-        
-        self.check_halls()
-        time.sleep(5)
 
     def rotate_to_match_start(self, observed, expected):
         """
-        Rotate the observed list so that it starts with the same state as the expected list.
+        Rotate the observed list so that it starts with '100' while maintaining sequence order.
+        Does not change the sequence itself, only changes where we start reading from.
 
         Parameters:
             observed (list): The list to be rotated.
-            expected (list): The reference list that determines the starting element.
+            expected (list): The reference list (used only for validation).
 
         Returns:
-            list: The rotated list starting with the same element as the expected list.
+            list: The rotated list starting with '100', maintaining original sequence order.
         """
-        observed_deque = deque(observed)
+        if '100' not in observed:
+            return observed
+            
+        # Find index of '100'
+        start_idx = observed.index('100')
         
-        # Find the first occurrence of expected[0] in observed
-        if expected[0] in observed_deque:
-            # Rotate left until the first element matches expected[0]
-            while observed_deque[0] != expected[0]:
-                observed_deque.rotate(-1)
-        
-        # Convert deque back to list and return
-        return list(observed_deque)
+        # Return the list starting from '100', wrapping around to the beginning
+        return observed[start_idx:] + observed[:start_idx]
 
     def check_halls(self, retry=False):
         """Check hall sensor sequence for each axis in parallel."""
-        self.station_print('Checking Halls')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Checking Halls', station_id=station_id)
         hall_check_step = self.get_spec_value('NominalTravel')
         hall_check_vel = 5
 
-        test_time = hall_check_step / hall_check_vel
+        test_time = hall_check_step / hall_check_vel + 10
         n = int(self.sample_rate * test_time)
         freq = a1.DataCollectionFrequency.Frequency1kHz
         
@@ -555,7 +804,7 @@ class stage_checkout():
             time.sleep(2)
         
         for axis in self.test_axes:
-            thread = threading.Thread(target=move_to_limit, args=(axis,))
+            thread = self.create_tracked_thread(target=move_to_limit, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -570,9 +819,10 @@ class stage_checkout():
                 controller = self.station_controllers[axis]
                 station_id = self.axis_to_station_map.get(axis)
                 
-                # Configure data collection
-                data_config = self.data_config(n, freq, axis)
-                
+                with _thread_lock:
+                    # Configure data collection
+                    data_config = self.data_config(n, freq, axis)
+                    
                 # Start data collection and move
                 controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
                 time.sleep(0.1)
@@ -590,72 +840,107 @@ class stage_checkout():
                     messagebox.showerror("Axis Fault", error_message)
                     return
                 
-                time.sleep(test_time)
-                time.sleep(1)
+                time.sleep(10)
                 
+                controller.runtime.data_collection.stop()
                 # Get results and populate instance variables
                 axis_results = controller.runtime.data_collection.get_results(data_config, n)
+                
                 self.populate(axis, axis_results)
                 
-                # Process hall states for this axis
-                hall_status = []
-                encoder_values = []
+                # Initialize unique state tracking for this axis if not already done
+                if axis not in self.unique_hall_states:
+                    self.unique_hall_states[axis] = []
                 
-                # Use instance variables populated by self.populate
-                for c, a, b, encoder in zip(self.hall_c, self.hall_a, 
-                                          self.hall_b, self.pri_fbk):
-                    hall_state = f"{c}{a}{b}"
-                    hall_status.append(hall_state)
-                    encoder_values.append(encoder)
-                
-                # Process unique states
-                unique_hall_states = []
-                unique_encoder_values = []
                 seen_states = set()
+                last_state = None
                 
-                for state, encoder in zip(hall_status, encoder_values):
+                # Now access axis-specific data from dictionaries
+                for i, state in enumerate(self.hall_states[axis]):
+                    if len(seen_states) >= 6:
+                        break
+                    
                     if state not in seen_states:
-                        unique_hall_states.append(state)
-                        unique_encoder_values.append(encoder)
+                        self.unique_hall_states[axis].append(state)
                         seen_states.add(state)
+                        last_state = state
                 
                 # Validate hall sequence
                 expected_order_cw = ["100", "101", "001", "011", "010", "110"]
                 expected_order_ccw = expected_order_cw[::-1]
                 
-                encoder_direction = "positive" if sum(y > x for x, y in zip(unique_encoder_values, unique_encoder_values[1:])) > len(unique_encoder_values) // 2 else "negative"
+                # Calculate encoder direction by comparing first and last values
+                start_pos = self.pri_fbk[axis][0]
+                end_pos = self.pri_fbk[axis][-1]
+                print(f'For axis {axis} - Start: {start_pos}, End: {end_pos}')
+                encoder_direction = "positive" if end_pos > start_pos else "negative"
                 
+                self.stage_info.info(f"Axis {axis} direction check - Start: {start_pos}, End: {end_pos}, Direction: {encoder_direction}")
+                
+                # We commanded a positive move, so check if encoder direction matches
+                if encoder_direction == "negative":
+                    confirm = messagebox.askyesno(
+                        'Encoder Direction Mismatch',
+                        f'Axis {axis} was commanded to move positive but encoder shows negative motion. Is this intentional?'
+                    )
+                    if not confirm:
+                        self.station_print(f'Encoder direction mismatch on axis {axis}. Please check encoder wiring.', station_id=station_id)
+                        raise TestSequenceAbort(f"Encoder direction mismatch on axis {axis}")
+
+                # Use the actual encoder direction to determine expected sequence
                 if encoder_direction == "positive":
-                    rotated_hall_states = self.rotate_to_match_start(unique_hall_states, expected_order_cw)
+                    rotated_hall_states = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_cw)
                     hall_order_valid = rotated_hall_states == expected_order_cw
                 else:
-                    rotated_hall_states = self.rotate_to_match_start(unique_hall_states, expected_order_ccw)
+                    rotated_hall_states = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_ccw)
                     hall_order_valid = rotated_hall_states == expected_order_ccw
                 
                 # Process results
                 if len(rotated_hall_states) < 6:
-                    self.station_print(f'Not all hall states seen on axis {axis}', station_id=station_id)
-                    self.stage_info.info(f"A fault occurred on {axis}. Not all hall states seen.")
-                else:
-                    self.process_hall_results(axis, station_id, rotated_hall_states, unique_encoder_values, 
-                                            hall_order_valid, encoder_direction, unique_hall_states)
+                    affected_stations = []
+                    for test_axis in self.test_axes:
+                        test_station_id = self.axis_to_station_map.get(test_axis)
+                        if test_station_id and test_station_id in self.station_loggers:
+                            affected_stations.append(test_station_id)
+                            self.station_print(f'Not all hall states seen on axis {test_axis}', station_id=test_station_id)
+                            self.stage_info.info(f"A fault occurred on {test_axis}. Not all hall states seen.")
+                            self.station_print("Please address hall issues before continuing.", station_id=test_station_id)
+                            
+                            # Release only this station
+                            station_manager = get_station_manager()
+                            station_manager.release_station(test_station_id)
+                            self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+
+                            if test_axis in self.test_axes:
+                                self.test_axes.remove(test_axis)
+                            if test_axis in self.station_controllers:
+                                del self.station_controllers[test_axis]
                     
+                    if not self.test_axes:
+                        error_msg = "Please address hall issues on affected axes. Ending test."
+                        messagebox.showerror("Test Sequence Aborted", error_msg)
+                        raise TestSequenceAbort(error_msg)
+                    
+                else:
+                    self.process_hall_results(axis, station_id, rotated_hall_states, self.pri_fbk[axis], 
+                                            hall_order_valid, encoder_direction, self.unique_hall_states[axis])    
             except Exception as e:
                 self.station_print(f"Error collecting hall data for {axis}: {str(e)}", station_id=station_id)
         
         # Start data collection threads
         for axis in self.test_axes:
-            thread = threading.Thread(target=collect_hall_data, args=(axis,))
+            thread = self.create_tracked_thread(target=collect_hall_data, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
         # Wait for all data collection to complete
         for thread in threads:
             thread.join()
-
+        
     def absolute_hardstop(self):
         """Check hardstop travels for all axes and calculate absolute home offset."""
-        self.station_print('Checking Hardstop Travels')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Checking Hardstop Travels', station_id=station_id)
         self.abs_ccw_positions = {}
         self.abs_cw_positions = {}
         test = 'absolute hardstop check'
@@ -735,15 +1020,14 @@ class stage_checkout():
             travel = abs(self.abs_ccw_positions[axis] - self.abs_cw_positions[axis])
             self.stage_info.info(f'Total travel for {axis} is {travel}')
 
-        self.calculate_home_offset()
-
     def calculate_home_offset(self):
         """Calculate and set home offsets for each axis."""
-        self.station_print('Calculating Offset')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Calculating Offset', station_id=station_id)
         self.midpoints = {}
         
         if self.absolute:
-            for axis in self.abs_ccw_positions:
+            for axis in self.test_axes:
                 controller = self.station_controllers[axis]
                 ccw_pos = self.abs_ccw_positions[axis]
                 cw_pos = self.abs_cw_positions[axis]
@@ -766,98 +1050,79 @@ class stage_checkout():
                 configured_parameters.axes[axis].feedback.auxiliaryabsolutefeedbackoffset.value = midpoint
                 configured_parameters.axes[axis].protection.maxcurrentclamp.value = self.max_current_clamp
                 controller.configuration.parameters.set_configuration(configured_parameters)
-                controller.reset()
         else:
-            for axis, limits in self.limit_pos.items():
+            for axis in self.test_axes:
+                if axis not in self.limit_pos:
+                    continue
+                
+                limits = self.limit_pos[axis]
                 controller = self.station_controllers[axis]
                 cw_pos = limits.get('Cw', 0)
                 ccw_pos = limits.get('Ccw', 0)
                 midpoint = (ccw_pos + cw_pos) / 2
                 self.midpoints[axis] = midpoint
-                self.data[f"Axis: {axis}"]["Home Offset"] = midpoint
+                self.data[f"Axis: {axis}"]["Home Offset"] = round(midpoint, 4)
 
                 configured_parameters = controller.configuration.parameters.get_configuration()
                 configured_parameters.axes[axis].homing.homeoffset.value = midpoint
                 controller.configuration.parameters.set_configuration(configured_parameters)
-                controller.reset()
-
-        time.sleep(10)
-
-        # Enable all axes
-        for axis in self.test_axes:
-            controller = self.station_controllers[axis]
-            controller.runtime.commands.motion.enable([axis])
-
-        time.sleep(2)
-        self.software_limits()
     
     def software_limits(self):
         """
         Set software limits for connected axes based on hexapod type and configure parameters.
-        
-        This function sets the software limits for each axis in the connected_axes list.
-        The limits are determined by the hexapod type and parameters stored in param_dict.
-        After setting the limits, the function resets the controller to apply changes
-        and re-enables the axes. It also initializes a burn-in process.
         """
-        self.station_print('Setting Software Limits')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Setting Software Limits', station_id=station_id)
         
+        # Set software limits for each axis using its own controller
         for axis in self.test_axes:
-            # Retrieve current configuration parameters
-            configured_parameters = self.controller.configuration.parameters.get_configuration()
-            configured_parameters.axes[axis].protection.softwarelimithigh.value = (((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1))
-            configured_parameters.axes[axis].protection.softwarelimitlow.value = ((((float(self.specs_dict.get('NominalTravel').split()[0]) / 2) + 0.1) * -1))
+            controller = self.station_controllers[axis]
+            station_id = self.axis_to_station_map.get(axis)
+            
+            try:
+                # Retrieve current configuration parameters
+                configured_parameters = controller.configuration.parameters.get_configuration()
+                configured_parameters.axes[axis].protection.softwarelimithigh.value = (self.get_spec_value('NominalTravel') / 2) + 0.1
+                configured_parameters.axes[axis].protection.softwarelimitlow.value = ((self.get_spec_value('NominalTravel') / 2) + 0.1) * -1
 
-            # Apply the new configuration
-            self.controller.configuration.parameters.set_configuration(configured_parameters)
+                # Apply the new configuration
+                controller.configuration.parameters.set_configuration(configured_parameters)
+            except Exception as e:
+                self.station_print(f"Error setting software limits for axis {axis}: {str(e)}", station_id=station_id)
         
-        # Set additional parameters and reset the controller
+        # Set additional parameters and reset controllers in parallel
+        threads = []
+        def configure_axis(axis):
+            controller = self.station_controllers[axis]
+            try:
+                self.params(controller, axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
+            except Exception as e:
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Error configuring axis {axis}: {str(e)}", station_id=station_id)
+        
+        # Start configuration threads
         for axis in self.test_axes:
-            self.params(axis, home_offset=self.midpoints[axis], current_clamp=self.max_current_clamp, limit=['electrical on', 'software on'])
-        self.controller.reset()
-        time.sleep(10)
+            print(f'Configuring axis in {self.test_axes}')
+            thread = self.create_tracked_thread(target=configure_axis, axis=axis, args=(axis,))
+            threads.append(thread)
+            thread.start()
         
-        # Enable the connected axes
-        self.controller.runtime.commands.motion.enable(self.test_axes)
-        
-        if self.absolute:
-        # Initialize burn-in process
-            BI = burn_in(
-                self.speed, 
-                self.burnin_time, 
-                self.secondary_ui, 
-                self.window, 
-                self.test_axes, 
-                self.nominal_travel, 
-                self.fault_log, 
-                self.stage_info, 
-                self.duty_cycle, 
-                self.job_log_dir, 
-                self.stage_type, 
-                self.absolute, 
-                self.job, 
-                self.op, 
-                self.comments, 
-                self.specs_dict, 
-                self.stations, 
-                self.stage_log_file
-            )
-            
-            # Pass the station controllers to burn-in
-            BI.initialize_burnin(self.station_controllers)
+        # Wait for all configurations to complete
+        for thread in threads:
+            thread.join()
 
-            populate_sheet = Sheets(self.job, self.data)
-            populate_sheet.populate_sheet()
-        else:
-            # Home the struts
-            self.home_stages()
-            
+        self.reset_controllers()
+        time.sleep(5)
+        self.enable()
+        self.home_stages()
+
     def home_stages(self):
         """
         Home all stages in parallel based on encoder type.
         Handles homing or absolute positioning for each axis independently.
         """
-        self.station_print('Homing Axes')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Homing Axes', station_id=station_id)
         test = 'homing'
         
         threads = []
@@ -888,6 +1153,11 @@ class stage_checkout():
                 attempt_operation(lambda: controller.runtime.commands.motion.home([axis]))
                 time.sleep(1)
                 
+                # Check for faults after absolute move
+                faults_per_axis = self.check_for_faults(controller, [axis])
+                if faults_per_axis:
+                    self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
+                    time.sleep(2)
                 # Update marker status
                 self.data[f"Axis: {axis}"]["Marker"] = "Passed"
                 
@@ -911,7 +1181,7 @@ class stage_checkout():
         
         # Start a thread for each axis
         for axis in self.test_axes:
-            thread = threading.Thread(target=home_single_axis, args=(axis,))
+            thread = self.create_tracked_thread(target=home_single_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -923,7 +1193,8 @@ class stage_checkout():
         """Check hardstop travels for each axis in parallel."""
         self.hardstop_pos = {}
         self.limit_pos = {}
-        self.station_print('Checking Limits and Hardstops')
+        station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+        self.station_print('Checking Limits and Hardstops', station_id=station_id)
         test = 'hardstop and limit check'
 
         def check_single_axis(axis, direction):
@@ -932,11 +1203,28 @@ class stage_checkout():
             station_id = self.axis_to_station_map.get(axis)
             limit = 'Cw' if direction == 'cw' else 'Ccw'
             
+            try:
+                if limit == 'Cw':
+                    controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
+                else:
+                    controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+                time.sleep(2)
+                controller.runtime.commands.motion.waitformotiondone([axis])
+            except (ControllerAxisFaultException, ControllerOperationException):
+                faults_per_axis = self.check_for_faults(controller, [axis])
+                if faults_per_axis:
+                    self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
+                    time.sleep(2)
+            time.sleep(3)
             # Move to limit and hardstop using this axis's controller
             self.move_into_limit(controller, test, limit, axis)
-            time.sleep(2)
+            faults_per_axis = self.check_for_faults(controller, [axis])
+            if faults_per_axis:
+                controller.runtime.commands.fault_and_error.acknowledgeall(1)
+
+            time.sleep(3)
+
             self.move_into_hardstop(controller, test, limit, axis)
-            
             # Check and clear faults using this axis's controller
             faults_per_axis = self.check_for_faults(controller, [axis])
             if faults_per_axis:
@@ -948,7 +1236,7 @@ class stage_checkout():
         # Run CCW checks in parallel
         threads = []
         for axis in self.test_axes:
-            thread = threading.Thread(target=check_single_axis, args=(axis, 'ccw'))
+            thread = self.create_tracked_thread(target=check_single_axis, axis=axis, args=(axis, 'ccw'))
             threads.append(thread)
             thread.start()
         
@@ -959,7 +1247,7 @@ class stage_checkout():
         # Run CW checks in parallel 
         threads = []
         for axis in self.test_axes:
-            thread = threading.Thread(target=check_single_axis, args=(axis, 'cw'))
+            thread = self.create_tracked_thread(target=check_single_axis, axis=axis, args=(axis, 'cw'))
             threads.append(thread)
             thread.start()
         
@@ -967,47 +1255,14 @@ class stage_checkout():
             thread.join()
         time.sleep(5)
 
-        # Calculate travels and update parameters
-        self.calculate_limit_travel()
-        time.sleep(2)
-        self.calculate_home_offset()
-        time.sleep(2)
-        self.marker_to_limit()
-        time.sleep(2)
-
-        print(f'Data To Sheet: {self.data}')
-        
-        # Initialize burn-in with the station controllers
-        BI = burn_in(
-            self.speed, 
-            self.burnin_time, 
-            self.secondary_ui, 
-            self.window, 
-            self.test_axes, 
-            self.nominal_travel, 
-            self.fault_log, 
-            self.stage_info, 
-            self.duty_cycle, 
-            self.job_log_dir, 
-            self.stage_type, 
-            self.absolute, 
-            self.job, 
-            self.op, 
-            self.comments, 
-            self.specs_dict, 
-            self.stations, 
-            self.stage_log_file
-        )
-        
-        # Pass the station controllers to burn-in
-        BI.initialize_burnin(self.station_controllers)
-
-        populate_sheet = Sheets(self.job, self.data)
-        populate_sheet.populate_sheet()
-
-        time.sleep(5)
-        self.home_stages()
-        self.station_print("All tests completed.")
+        try:
+            # Calculate travels and update parameters
+            self.calculate_limit_travel()
+            time.sleep(2)
+        except TestSequenceAbort as e:
+            messagebox.showerror("Test Sequence Aborted", str(e))
+            self.station_print(f"Test sequence aborted: {str(e)}")
+            # Any final cleanup if needed
 
     def move_into_limit(self, controller, test, limit, axis):
         """Move a single axis to its limit position."""
@@ -1015,8 +1270,9 @@ class stage_checkout():
         n = int(self.sample_rate * test_time)
         freq = a1.DataCollectionFrequency.Frequency1kHz
         
-        # Use existing data_config method
-        data_config = self.data_config(n, freq, axis)
+        with _thread_lock:
+            # Use existing data_config method
+            data_config = self.data_config(n, freq, axis)
         
         controller.runtime.commands.motion.enable([axis])
         time.sleep(1)
@@ -1036,10 +1292,18 @@ class stage_checkout():
                 controller.runtime.commands.fault_and_error.acknowledgeall(1)
                 time.sleep(2)
         
+        faults_per_axis = self.check_for_faults(controller, [axis])
+        if faults_per_axis:
+            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+            time.sleep(2)
+
+        time.sleep(5)
+
         results = controller.runtime.data_collection.get_results(data_config, n)
+        
         self.populate(axis, results)
-        if test != 'marker to limit':
-            self.log_limit_pos(axis, limit, results)
+
+        self.log_limit_pos(axis, limit, results)
         time.sleep(2)
 
     def move_into_hardstop(self, controller, test, limit, axis):
@@ -1052,8 +1316,9 @@ class stage_checkout():
             n = int(self.sample_rate * test_time)
             freq = a1.DataCollectionFrequency.Frequency1kHz
             
-            # Use existing data_config method instead of custom configuration
-            data_config = self.data_config(n, freq, axis)
+            with _thread_lock:
+                # Use existing data_config method instead of custom configuration
+                data_config = self.data_config(n, freq, axis)
             
             controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.low_current_clamp
             limit_dec = self.get_limit_dec(controller, axis, limit='electrical off')
@@ -1078,14 +1343,24 @@ class stage_checkout():
                 if faults_per_axis:
                     controller.runtime.commands.fault_and_error.acknowledgeall(1)
                     time.sleep(2)
+
+            faults_per_axis = self.check_for_faults(controller, [axis])
+            if faults_per_axis:
+                controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                time.sleep(2)        
             time.sleep(10)
             
+            controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.max_current_clamp
+            limit_dec = self.get_limit_dec(controller, axis, limit='electrical on')
+            controller.runtime.parameters.axes[axis][a1.AxisParameterId.FaultMask].value = limit_dec
+
             results = controller.runtime.data_collection.get_results(data_config, n)
             self.populate(axis, results)
             self.log_hardstop_pos(axis, limit, results)
-            time.sleep(2)
+            time.sleep(5)
         except ValueError as e:
-            self.station_print(f"Error getting specifications: {e}")
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f"Error getting specifications: {e}", station_id=station_id)
             return
 
     def move_out_of_hardstop(self, controller, limit, axis):
@@ -1132,24 +1407,56 @@ class stage_checkout():
                         controller.runtime.commands.fault_and_error.acknowledgeall(1)
                         time.sleep(2)
         except ValueError as e:
-            self.station_print(f"Error getting nominal travel: {e}")
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f"Error getting nominal travel: {e}", station_id=station_id)
             return
 
-    def log_hardstop_pos(self, axis, limit, results):
+    def enable(self, test=None):
         """
-        Logs the current position of the given axis after it has reached its hardstop in the specified direction.
+        Enables the connected axes and handles any faults that may occur.
+        """
+        threads = []
+        
+        def enable_single_axis(axis):
+            controller = self.station_controllers[axis]
+            station_id = self.axis_to_station_map.get(axis)
+            
+            retries = 0
+            retry_limit = 10
+            while retries < retry_limit:
+                try:
+                    controller.runtime.commands.motion.enable([axis])
+                    break
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    retries += 1
+                    faults_per_axis = self.check_for_faults(controller, [axis])
+                    if faults_per_axis:
+                        self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
+                    time.sleep(2)
+                
+                if retries == retry_limit:
+                    self.station_print(f'Exceeded retry limit with axis: {axis}', station_id=station_id)
+        
+        # Start enable threads
+        for axis in self.test_axes:
+            thread = self.create_tracked_thread(target=enable_single_axis, axis=axis, args=(axis,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all enables to complete
+        for thread in threads:
+            thread.join()
+        
+        time.sleep(1)
 
-        Parameters:
-            axis (int): The axis number to log the hardstop position for.
-            limit (str): The direction of the limit ('Ccw' or 'Cw').
-            results (a1.DataCollectionResults): The results of the data collection run.
-        """
+    def log_hardstop_pos(self, axis, limit, results):
+        """Logs the current position of the given axis after it has reached its hardstop."""
         position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
 
         # Combine signals into a dictionary for logging
         signals = {
-            "Position Error Bit Toggled": self.pos_error_fault,
-            "Over Current Bit Toggled": self.over_current_fault,
+            "Position Error Bit Toggled": self.pos_error_fault[axis],  # Now access axis-specific data
+            "Over Current Bit Toggled": self.over_current_fault[axis],
             "Raw Position Feedback": position_feedback,
         }
 
@@ -1157,19 +1464,17 @@ class stage_checkout():
         log_file_path = os.path.join("logs", f"signal_data_log-{axis}-{limit}-Hardstop.txt")
         self.log_signals_to_file(log_file_path, signals)
 
-        end_position = None  # Initialize variable to store the position feedback
-
+        end_position = None
         # Iterate through velocity_command and track zero crossings
-        for i, bit in enumerate(self.pos_error_fault):
+        for i, bit in enumerate(self.pos_error_fault[axis]):  # Access axis-specific data
             if bit == 1:
                 end_position = position_feedback[i]
-                break  # Stop searching after finding the second zero crossing
+                break
         if end_position == None:
-            # Iterate through velocity_command and track zero crossings
-            for i, bit in enumerate(self.over_current_fault):
+            for i, bit in enumerate(self.over_current_fault[axis]):  # Access axis-specific data
                 if bit == 1:
                     end_position = position_feedback[i]
-                    break  # Stop searching after finding the second zero crossing
+                    break
         if end_position == None:
             if limit == 'Ccw':
                 absolute_feedback = [abs(value) for value in position_feedback]
@@ -1189,20 +1494,13 @@ class stage_checkout():
         self.stage_info.info(f'{limit} hardstop Position for {axis}: {end_position}')
         
     def log_limit_pos(self, axis, limit, results):
-        """
-        Logs the current position of the given axis after it has reached its limit in the specified direction.
-
-        Parameters:
-            axis (int): The axis number to log the limit position for.
-            limit (str): The direction of the limit ('Ccw' or 'Cw').
-            results (a1.DataCollectionResults): The results of the data collection run.
-        """
+        """Logs the current position of the given axis after it has reached its limit."""
         position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
 
         if limit == 'Ccw':
             # Combine signals into a dictionary for logging
             signals = {
-                "Fault Bit Toggled": self.ccw_fault,
+                "Fault Bit Toggled": self.ccw_fault[axis],  # Access axis-specific data
                 "Position Feedback": position_feedback,
             }
 
@@ -1210,17 +1508,16 @@ class stage_checkout():
             log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Ccw-Limit.txt")
             self.log_signals_to_file(log_file_path, signals)
 
-            end_position = None  # Initialize variable to store the position feedback
-
-            # Iterate through velocity_command and track zero crossings
-            for i, bit in enumerate(self.ccw_fault):
-                if bit == 1:  # Check if velocity_command is zero
+            end_position = None
+            for i, bit in enumerate(self.ccw_fault[axis]):  # Access axis-specific data
+                if bit == 1:
                     end_position = position_feedback[i]
-                    break  # Stop searching after finding the second zero crossing
+                    self.data[f"Axis: {axis}"]["Home Marker to Limit"] = round(end_position, 4)
+                    break
         else:
             # Combine signals into a dictionary for logging
             signals = {
-                "Fault Bit Toggled": self.cw_fault,
+                "Fault Bit Toggled": self.cw_fault[axis],  # Access axis-specific data
                 "Position Feedback": position_feedback,
             }
 
@@ -1228,13 +1525,11 @@ class stage_checkout():
             log_file_path = os.path.join("logs", f"signal_data_log-{axis}-Cw-Limit.txt")
             self.log_signals_to_file(log_file_path, signals)
 
-            end_position = None  # Initialize variable to store the position feedback
-
-            # Iterate through velocity_command and track zero crossings
-            for i, bit in enumerate(self.cw_fault):
-                if bit == 1:  # Check if velocity_command is zero
+            end_position = None
+            for i, bit in enumerate(self.cw_fault[axis]):  # Access axis-specific data
+                if bit == 1:
                     end_position = position_feedback[i]
-                    break  # Stop searching after finding the second zero crossing
+                    break
 
         # Use a nested dictionary to store both 'Ccw' and 'Cw' positions
         if axis not in self.limit_pos:
@@ -1245,17 +1540,44 @@ class stage_checkout():
         
         # Log the position of the current limit
         self.stage_info.info(f'{limit} limit Position for {axis}: {end_position}')
-            
+
+    def reset_controllers(self):
+        """
+        Reset all controllers in parallel using threads.
+        Waits for all resets to complete before returning.
+        """
+        threads = []
+        
+        def reset_single_controller(axis):
+            controller = self.station_controllers[axis]
+            station_id = self.axis_to_station_map.get(axis)
+            try:
+                controller.reset()
+                self.station_print(f"Reset completed for axis {axis}", station_id=station_id)
+            except Exception as e:
+                self.station_print(f"Error resetting axis {axis}: {str(e)}", station_id=station_id)
+        
+        # Start reset threads
+        for axis in self.test_axes:
+            thread = self.create_tracked_thread(target=reset_single_controller, axis=axis, args=(axis,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all resets to complete
+        for thread in threads:
+            thread.join()
+        
+        # Standard wait time after reset
+        time.sleep(10)
+
     def calculate_limit_travel(self):
         """
         Calculates the distance between CW and CCW limits for each axis, and
         compares it to the specified limit travel. If the distance is too small,
         it fails the test and logs an error.
         """
-        limit_fail_list  = []
-        hardstop_fail_list = []
         # Calculate the distance between CW and CCW limits for each axis
-        for axis in self.test_axes:
+        for axis in list(self.test_axes):  # Create a copy to safely modify during iteration
             station_id = self.axis_to_station_map.get(axis)
             if 'Ccw' in self.limit_pos[axis] and 'Cw' in self.limit_pos[axis]:
                 ccw_limit_position = self.limit_pos[axis]['Ccw']
@@ -1264,6 +1586,8 @@ class stage_checkout():
                 limit_distance = round(limit_distance, 4)
             else:
                 self.station_print(f"Axis {axis} is missing one or more limit positions.", station_id=station_id)
+                continue  # Skip to next axis if missing positions
+
             if 'Ccw' in self.hardstop_pos[axis] and 'Cw' in self.hardstop_pos[axis]:
                 ccw_hardstop_position = self.hardstop_pos[axis]['Ccw']
                 cw_hardstop_position = self.hardstop_pos[axis]['Cw']
@@ -1271,39 +1595,92 @@ class stage_checkout():
                 hardstop_distance = round(hardstop_distance, 4)
             else:
                 self.station_print(f"Axis {axis} is missing one or more limit positions.", station_id=station_id)
+                continue  # Skip to next axis if missing positions
 
-            limit_spec = float(self.specs_dict.get('LimitToLimitTravel').split()[0])
-            hardstop_spec = float(self.specs_dict.get('HardToHard-FirstContact').split()[0])
+            limit_spec = self.get_spec_value('LimitToLimitTravel')
+            hardstop_spec = self.get_spec_value('HardToHard-FirstContact')
             
+            # Check limit travel
             if limit_distance < limit_spec:
-                #limit_failing = (limit_spec - limit_distance)
-                self.station_print(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}', station_id=station_id)
+                self.station_print(f"{axis} is failing with a limit travel of {round(limit_distance, 4)} and a spec of {limit_spec}", station_id=station_id)
                 self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}')
-                limit_fail_list.append(axis)
+                
+                # Ask user if they want to continue despite limit travel failure
+                response = messagebox.askyesno(
+                    "Limit Travel Failure",
+                    f"Station {station_id} failed limit travel check:\n\n" +
+                    f"Measured: {round(limit_distance, 4)}\n" +
+                    f"Required: {limit_spec}\n\n" +
+                    "Would you like to continue testing this station anyway?"
+                )
+                
+                if not response:
+                    self.station_print("Please address limit travel issues before continuing.", station_id=station_id)
+                    
+                    # Release the station and remove from testing
+                    station_manager = get_station_manager()
+                    station_manager.release_station(station_id)
+                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                    controller = self.station_controllers[axis]
+                    controller.runtime.commands.motion.disable([axis])
+                    
+                    # Remove from active testing
+                    self.test_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+                    
+                    continue  # Skip rest of processing for this axis
+                else:
+                    self.station_print("Continuing despite limit travel failure.", station_id=station_id)
             else:
-                self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
-            if hardstop_distance < hardstop_spec:
-                #hardstop_failing = (hardstop_spec - hardstop_distance)
-                self.station_print(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}', station_id=station_id)
-                self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(hardstop_distance, 4)}')
-                hardstop_fail_list.append(axis)
-            #else:
-                #self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
+                self.data[f"Axis: {axis}"]["Limits"] = 'Passed'
 
-            self.station_print(f'Axis {axis}: CCW Limit Position = {ccw_limit_position}, CW Limit Position = {cw_limit_position}, Limit Distance = {limit_distance}', station_id=station_id)
-            self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
+            # Check hardstop travel
+            if hardstop_distance < hardstop_spec:
+                self.station_print(f"{axis} is failing with a hardstop travel of {round(hardstop_distance, 4)} and a spec of {hardstop_spec}", station_id=station_id)
+                self.stage_info.info(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}')
+                
+                # Ask user if they want to continue despite hardstop travel failure
+                response = messagebox.askyesno(
+                    "Hardstop Travel Failure",
+                    f"Station {station_id} failed hardstop travel check:\n\n" +
+                    f"Measured: {round(hardstop_distance, 4)}\n" +
+                    f"Required: {hardstop_spec}\n\n" +
+                    "Would you like to continue testing this station anyway?"
+                )
+                
+                if not response:
+                    self.station_print("Please address hardstop travel issues before continuing.", station_id=station_id)
+                    
+                    # Release the station and remove from testing
+                    station_manager = get_station_manager()
+                    station_manager.release_station(station_id)
+                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                    controller = self.station_controllers[axis]
+                    controller.runtime.commands.motion.disable([axis])
+                    
+                    # Remove from active testing
+                    self.test_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+                    
+                    continue  # Skip rest of processing for this axis
+                else:
+                    self.station_print("Continuing despite hardstop travel failure.", station_id=station_id)
+
+            # If we get here, the axis passed both checks
+            self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
+            #self.station_print(f'Axis {axis}: CCW Limit Position = {ccw_limit_position}, CW Limit Position = {cw_limit_position}, Limit Distance = {limit_distance}', station_id=station_id)
+            #self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
             self.stage_info.info(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}')
             self.stage_info.info(f'Axis {axis} Distance between Ccw hardstop and Cw hardstop: {hardstop_distance}')
-            
-                
-        if len(limit_fail_list) > 0:
-            limit_fail = "One or more axes do not meet the minimum limit-to-hardstop distance. Please adjust before moving on."
-            self.station_print(limit_fail, station_id=station_id)
-            messagebox.showerror("Fail", limit_fail)
-            self.release_station = StationManager.release_station(station_id)
-            self.release_station()
-            self.reenable_run_button()  # Call the callback to re-enable the button
-            sys.exit()           
+
+        # Check if any axes remain
+        if not self.test_axes:
+            raise TestSequenceAbort("All axes have failed checks. Ending test.")
+        else:
+            station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+            self.station_print("Continuing with remaining axes...", station_id=station_id)
 
     def data_config(self, n: int, freq: a1.DataCollectionFrequency, axis: int) -> a1.DataCollectionConfiguration:
         """
@@ -1329,37 +1706,55 @@ class stage_checkout():
     def populate(self, axis, results):
         """
         Populate the hall sensor and primary feedback data structures based on the results of a data collection run.
-
-        Parameters:
-            axis (int): The axis number for which to retrieve data.
-            results (a1.DataCollectionResults): The results of the data collection run.
         """
-        # Initialize empty lists for the hall sensors and primary feedback
-        self.hall_a = []
-        self.hall_b = []
-        self.hall_c = []
-        self.pri_fbk = []
-        self.ccw_fault = []
-        self.cw_fault = []
-        self.pos_error_fault = []
-        self.over_current_fault = []
-
-        # Retrieve the drive status points for the specified axis
+        # Initialize dictionary entries for this axis
+        self.hall_states[axis] = []
+        self.pri_fbk[axis] = []
+        self.hall_a[axis] = []
+        self.hall_b[axis] = []
+        self.hall_c[axis] = []
+        self.ccw_fault[axis] = []
+        self.cw_fault[axis] = []
+        self.pos_error_fault[axis] = []
+        self.over_current_fault[axis] = []
+        
+        # Get the data
         halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
         faults = results.axis.get(a1.AxisDataSignal.AxisFault, axis).points
-        # Retrieve the primary feedback points for the specified axis
-        self.pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
+        self.pri_fbk[axis] = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
 
-        # Iterate over the drive status points and extract the hall sensor values
+        # Track unique states to stop after one complete sequence
+        seen_states = set()
+        
+        # Process hall states
         for x in halls:
-            self.hall_a.append(1 if ((int(x) & a1.DriveStatus.HallAInput.value) > 0) else 0)
-            self.hall_b.append(1 if ((int(x) & a1.DriveStatus.HallBInput.value) > 0) else 0)
-            self.hall_c.append(1 if ((int(x) & a1.DriveStatus.HallCInput.value) > 0) else 0)
+            # Stop if we've seen all 6 states
+            if len(seen_states) >= 6:
+                break
+            
+            # Extract individual hall states in C,A,B order
+            hall_c = 1 if ((int(x) & a1.DriveStatus.HallCInput.value) > 0) else 0
+            hall_a = 1 if ((int(x) & a1.DriveStatus.HallAInput.value) > 0) else 0
+            hall_b = 1 if ((int(x) & a1.DriveStatus.HallBInput.value) > 0) else 0
+            
+            # Create combined hall state string in C,A,B order
+            hall_state = f"{hall_c}{hall_a}{hall_b}"
+            
+            # Only add new states
+            if hall_state not in seen_states:
+                # Store individual hall states
+                self.hall_c[axis].append(hall_c)
+                self.hall_a[axis].append(hall_a)
+                self.hall_b[axis].append(hall_b)
+                self.hall_states[axis].append(hall_state)
+                seen_states.add(hall_state)
+
+        # Process faults
         for x in faults:
-            self.ccw_fault.append(1 if ((int(x) & a1.AxisFault.CcwEndOfTravelLimitFault.value) > 0) else 0)
-            self.cw_fault.append(1 if ((int(x) & a1.AxisFault.CwEndOfTravelLimitFault.value) > 0) else 0)
-            self.pos_error_fault.append(1 if ((int(x) & a1.AxisFault.PositionErrorFault.value) > 0) else 0)
-            self.over_current_fault.append(1 if ((int(x) & a1.AxisFault.OverCurrentFault.value) > 0) else 0)
+            self.ccw_fault[axis].append(1 if ((int(x) & a1.AxisFault.CcwEndOfTravelLimitFault.value) > 0) else 0)
+            self.cw_fault[axis].append(1 if ((int(x) & a1.AxisFault.CwEndOfTravelLimitFault.value) > 0) else 0)
+            self.pos_error_fault[axis].append(1 if ((int(x) & a1.AxisFault.PositionErrorFault.value) > 0) else 0)
+            self.over_current_fault[axis].append(1 if ((int(x) & a1.AxisFault.OverCurrentFault.value) > 0) else 0)
 
     def init_logger(self):
         """
@@ -1448,9 +1843,141 @@ class stage_checkout():
             self.stage_info.info(f'Observed states: {unique_hall_states}')
             self.data[f"Axis: {axis}"]["Halls"] = "Failed"
 
+            self.station_print("Please address hall issues before continuing.", station_id=station_id)
+            # Release the station and remove from testing
+            station_manager = get_station_manager()
+            station_manager.release_station(station_id)
+            self.secondary_ui.update_station_status(station_id, running=False, serial="")
+            controller = self.station_controllers[axis]
+            controller.runtime.commands.motion.disable([axis])
+
+            self.test_axes.remove(axis)
+            if axis in self.station_controllers:
+                del self.station_controllers[axis]
+
+        if not self.test_axes:
+            raise TestSequenceAbort("Please address hall issues on affected axes. Ending test.")
+        
         # Log encoder values at each hall state transition
-        self.station_print(f'Encoder values at hall transitions for {axis}:', station_id=station_id)
+        #self.station_print(f'Encoder values at hall transitions for {axis}:', station_id=station_id)
         self.stage_info.info(f'Encoder values at hall transitions for {axis}:')
         for state, value in zip(hall_states, encoder_values):
-            self.station_print(f'State {state}: {value}', station_id=station_id)
+            #self.station_print(f'State {state}: {value}', station_id=station_id)
             self.stage_info.info(f'State {state}: {value}')
+
+    def cleanup_data_structures(self, station_id, axis):
+        """
+        Clean up data structures and threads for a station
+        """
+        # Clear axis-related data structures
+        if axis in self.test_axes:
+            self.test_axes.remove(axis)
+        
+        if axis in self.station_controllers:
+            del self.station_controllers[axis]
+
+        # Clear station-related data structures
+        if station_id in self.station_loggers:
+            del self.station_loggers[station_id]
+
+        # Clear any test-specific data structures
+        if hasattr(self, 'hall_states'):
+            self.hall_states = []
+        if hasattr(self, 'pri_fbk'):
+            self.pri_fbk = []
+        if hasattr(self, 'hall_a'):
+            self.hall_a = []
+        if hasattr(self, 'hall_b'):
+            self.hall_b = []
+        if hasattr(self, 'hall_c'):
+            self.hall_c = []
+        
+        # Clear any position/travel related data
+        if hasattr(self, 'hardstop_pos') and axis in self.hardstop_pos:
+            del self.hardstop_pos[axis]
+        if hasattr(self, 'limit_pos') and axis in self.limit_pos:
+            del self.limit_pos[axis]
+        if hasattr(self, 'abs_ccw_positions') and axis in self.abs_ccw_positions:
+            del self.abs_ccw_positions[axis]
+        if hasattr(self, 'abs_cw_positions') and axis in self.abs_cw_positions:
+            del self.abs_cw_positions[axis]
+        
+        # Enhanced thread cleanup
+        if hasattr(self, 'active_threads'):
+            threads_to_remove = []
+            for thread in self.active_threads:
+                # Check both axis and station_id
+                if (thread.axis == axis or 
+                    (thread.station_id is not None and thread.station_id == station_id)):
+                    if thread.is_alive():
+                        thread.join(timeout=1.0)
+                    threads_to_remove.append(thread)
+            
+            for thread in threads_to_remove:
+                self.active_threads.remove(thread)
+    
+    def perform_test_cleanup(self):
+        """
+        Perform cleanup operations after test completion or abort.
+        """
+        current_thread = threading.current_thread()
+        station_manager = get_station_manager()
+        
+        # Clean up each station/axis that was being tested
+        for axis in list(self.test_axes):  # Create a copy of the list to iterate
+            try:
+                if axis not in self.station_controllers:
+                    continue
+                
+                controller = self.station_controllers[axis]
+                controller.runtime.data_collection.stop()
+                station_id = self.axis_to_station_map.get(axis)
+                
+                if station_id and station_id in self.station_loggers:  # Only cleanup stations that belong to this test
+                    try:
+                        # Print status messages BEFORE cleanup
+                        self.station_print("Cleanup complete for station", station_id=station_id)
+                        self.station_print(f"Station {station_id} has been released", station_id=station_id)
+                        
+                        # Update UI and release station only for stations in this test
+                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                        station_manager.release_station(station_id)
+                        station_manager.refresh_station_status()
+                        
+                        # Do data structure cleanup last
+                        self.cleanup_data_structures(station_id, axis)
+                        
+                    except Exception as cleanup_error:
+                        self.station_print(f"Error during cleanup: {str(cleanup_error)}", station_id=station_id)
+                        self.fault_log.error(f"Cleanup error for station {station_id}: {str(cleanup_error)}")
+            except Exception as e:
+                self.fault_log.error(f"Error during cleanup for axis {axis}: {str(e)}")
+
+    def setup_logging(self, serial_number):
+        """Setup logging for each station."""
+        # Create serial number directory if it doesn't exist
+        serial_dir = os.path.join(self.job_log_dir, serial_number)
+        os.makedirs(serial_dir, exist_ok=True)
+        
+        # Create station-specific loggers
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map[axis]
+            station_log_file = os.path.join(serial_dir, f'ST{station_id:02d}_log.txt')
+            
+            # Create logger for this station
+            station_logger = logging.getLogger(f'station_{station_id}')
+            station_logger.setLevel(logging.INFO)
+            
+            # Create file handler
+            fh = logging.FileHandler(station_log_file)
+            fh.setLevel(logging.INFO)
+            
+            # Create formatter
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            fh.setFormatter(formatter)
+            
+            # Add handler to logger
+            station_logger.addHandler(fh)
+            
+            # Store logger reference
+            self.station_loggers[station_id] = station_logger

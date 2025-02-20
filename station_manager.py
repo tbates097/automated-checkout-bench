@@ -42,6 +42,7 @@ class StationManager:
             except json.JSONDecodeError:
                 print(f"Error reading {STATION_CONFIG_FILE}. Using default configuration.")
         return {
+            'ST01': '192.168.1.15',
             'ST02': '192.168.1.16',
             'ST03': '192.168.1.17'
         }
@@ -129,11 +130,11 @@ class StationManager:
         """Release a station back to available pool"""
         if station in self.station_states:
             self.station_states[station].update({
-                "status": "free",
+                "status": "connected",
                 "serial_number": "",
                 "program_id": None
             })
-            self.update_station_display(station, "free")
+            self.update_station_display(station, "connected")
 
     def get_station_status(self, station):
         """Get the current status of a station"""
@@ -203,4 +204,20 @@ class StationManager:
     def save_station_config(self):
         """Save station configuration to file."""
         with open(STATION_CONFIG_FILE, 'w') as f:
-            json.dump(self.station_dict, f) 
+            json.dump(self.station_dict, f)
+
+    def refresh_station_status(self):
+        """Refresh the status of all stations."""
+        for station_name in self.station_states:
+            if self.station_states[station_name]["status"] != "connected":
+                self.station_states[station_name]["status"] = "free"
+                self.station_states[station_name]["program_id"] = None
+                self.station_states[station_name]["serial_number"] = ""
+
+    def release_station(self, station_id):
+        """Release a specific station."""
+        station_name = f'ST{station_id:02d}'
+        if station_name in self.station_states:
+            self.station_states[station_name]["status"] = "connected"  # Change to "connected" instead of "free"
+            self.station_states[station_name]["program_id"] = None
+            self.station_states[station_name]["serial_number"] = "" 
