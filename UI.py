@@ -58,6 +58,7 @@ test_axes = []
 specs_dict = {}
 absolute = False
 allocated_stations = []
+previously_allocated_stations = set()
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -300,13 +301,22 @@ def UI():
             }
 
             def run_test():
-                stations = [int(station[2:]) for station, state in station_manager.station_states.items()
-                        if state["program_id"] == program_id]
+                # Get only newly allocated stations for this run
+                new_stations = [int(station[2:]) for station, state in station_manager.station_states.items()
+                                if state["program_id"] == program_id 
+                                and state["status"] == "in-use"
+                                and int(station[2:]) not in previously_allocated_stations]
+                
+                # Update our tracking of allocated stations
+                previously_allocated_stations.update(new_stations)
+                
                 try:
-                    for station in stations:
+                    for station in new_stations:  # Only process new stations
                         # Assign serial number to each station
                         text_widget = secondary_ui.station_widgets[station]["txt_logs"]
                         station_states[station]["serial_number"] = serial_number
+                        station_states[station]["running"] = True  # Mark as running
+                        
                         # Instead of creating new TextLogger, let's use the existing one from the station
                         if station in secondary_ui.station_loggers:
                             sys.stdout = secondary_ui.station_loggers[station]
@@ -314,7 +324,9 @@ def UI():
                             # Only create new logger if one doesn't exist
                             secondary_ui.station_loggers[station] = TextLogger(text_widget, clear_existing=False)
                             sys.stdout = secondary_ui.station_loggers[station]
-                    secondary_ui.update_station_status(stations, running=True, serial=serial_number)
+                    
+                    # Only update UI for new stations
+                    secondary_ui.update_station_status(new_stations, running=True, serial=serial_number)
                     user_data = {
                                 "speed": var_speed.get(),
                                 "job": var_job.get(),
@@ -333,8 +345,8 @@ def UI():
                 finally:
                     # Always release stations when done
                     station_manager.release_stations(allocated_stations)
-                    secondary_ui.update_station_status(stations, running=False, serial="")
-                    print(f"Stations {stations} are now free.")
+                    secondary_ui.update_station_status(new_stations, running=False, serial="")
+                    print(f"Stations {new_stations} are now free.")
                     window.after(0, lambda: btn_run.config(state=tk.NORMAL))
 
             # Disable run button during test
@@ -421,6 +433,7 @@ def UI():
             print(f"Test error: {str(e)}")
             raise
         finally:
+            reenable_run_button()
             # Clean up controllers
             for ctrl in initialized_controllers.values():
                 if ctrl and hasattr(ctrl, 'disconnect'):

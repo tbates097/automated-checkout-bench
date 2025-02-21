@@ -104,6 +104,7 @@ class stage_checkout():
         self.hall_b = {}
         self.hall_c = {}
         self.hall_states = {}
+        self.hall_encoder_positions = {}
         self.pri_fbk = {}
         self.ccw_fault = {}
         self.cw_fault = {}
@@ -239,7 +240,7 @@ class stage_checkout():
         self.reenable_run_button = reenable_run_button
         self.reenable_run_button()
         # Initialize data dictionary for each axis
-        print(f'Test Axes: {self.test_axes}')
+
         station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
         self.station_print(f"Starting test for {self.job}.", station_id=station_id)
         self.data = {}
@@ -258,8 +259,8 @@ class stage_checkout():
             }
         
         self.init_logger()
-        self.fault_log.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
-        self.stage_info.info(f'Model: {self.stage_type}\nSerial Number: {self.job}\n')
+        self.fault_log.info(f'Model: {self.stage_type}.  Serial Number: {self.job}.  On Station(s): {", ".join(self.test_axes)}')
+        self.stage_info.info(f'Model: {self.stage_type}.  Serial Number: {self.job}.  On Station(s): {", ".join(self.test_axes)}')
         
         # Initialize motion parameters
         self.list_commands_ccw_pos = []
@@ -297,7 +298,7 @@ class stage_checkout():
             if self.absolute:
                 self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
             else:
-                self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on')
+                self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on', home_setup=1)
         
         # Reset all controllers in parallel
         self.reset_controllers()
@@ -445,7 +446,7 @@ class stage_checkout():
             finally:
                 self.perform_test_cleanup()
             
-    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None):
+    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None):
         """
         Configure parameters for a specific axis on its controller.
 
@@ -473,6 +474,9 @@ class stage_checkout():
         if limit:
             electrical_limit_value = self.get_limit_dec(controller, axis, limit)
             configured_parameters.axes[axis].protection.faultmask.value = electrical_limit_value
+        
+        if home_setup:
+            configured_parameters.axes[axis].homing.hometype.value = home_setup
 
         # Apply the updated configuration for the axis
         controller.configuration.parameters.set_configuration(configured_parameters)
@@ -763,26 +767,28 @@ class stage_checkout():
         for thread in threads:
             thread.join()
 
-    def rotate_to_match_start(self, observed, expected):
+    def rotate_to_match_start(self, observed, encoder_positions):
         """
-        Rotate the observed list so that it starts with '100' while maintaining sequence order.
-        Does not change the sequence itself, only changes where we start reading from.
-
+        Rotate the observed hall states and their encoder positions to start with '100'.
+        
         Parameters:
-            observed (list): The list to be rotated.
-            expected (list): The reference list (used only for validation).
-
+            observed (list): The list of hall states to be rotated
+            encoder_positions (list): The corresponding encoder positions
+            
         Returns:
-            list: The rotated list starting with '100', maintaining original sequence order.
+            tuple: (rotated hall states, rotated encoder positions)
         """
         if '100' not in observed:
-            return observed
+            return observed, encoder_positions
             
         # Find index of '100'
         start_idx = observed.index('100')
         
-        # Return the list starting from '100', wrapping around to the beginning
-        return observed[start_idx:] + observed[:start_idx]
+        # Rotate both lists together
+        rotated_states = observed[start_idx:] + observed[:start_idx]
+        rotated_positions = encoder_positions[start_idx:] + encoder_positions[:start_idx]
+        
+        return rotated_states, rotated_positions
 
     def check_halls(self, retry=False):
         """Check hall sensor sequence for each axis in parallel."""
@@ -872,10 +878,9 @@ class stage_checkout():
                 # Calculate encoder direction by comparing first and last values
                 start_pos = self.pri_fbk[axis][0]
                 end_pos = self.pri_fbk[axis][-1]
-                print(f'For axis {axis} - Start: {start_pos}, End: {end_pos}')
                 encoder_direction = "positive" if end_pos > start_pos else "negative"
                 
-                self.stage_info.info(f"Axis {axis} direction check - Start: {start_pos}, End: {end_pos}, Direction: {encoder_direction}")
+                self.log_only(f"Axis {axis} direction check - Start: {start_pos}, End: {end_pos}, Direction: {encoder_direction}", station_id=station_id)
                 
                 # We commanded a positive move, so check if encoder direction matches
                 if encoder_direction == "negative":
@@ -889,10 +894,10 @@ class stage_checkout():
 
                 # Use the actual encoder direction to determine expected sequence
                 if encoder_direction == "positive":
-                    rotated_hall_states = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_cw)
+                    rotated_hall_states, rotated_encoder_positions = self.rotate_to_match_start(self.unique_hall_states[axis], self.hall_encoder_positions[axis])
                     hall_order_valid = rotated_hall_states == expected_order_cw
                 else:
-                    rotated_hall_states = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_ccw)
+                    rotated_hall_states, rotated_encoder_positions = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_ccw)
                     hall_order_valid = rotated_hall_states == expected_order_ccw
                 
                 # Process results
@@ -903,7 +908,7 @@ class stage_checkout():
                         if test_station_id and test_station_id in self.station_loggers:
                             affected_stations.append(test_station_id)
                             self.station_print(f'Not all hall states seen on axis {test_axis}', station_id=test_station_id)
-                            self.stage_info.info(f"A fault occurred on {test_axis}. Not all hall states seen.")
+                            self.log_only(f"A fault occurred on {test_axis}. Not all hall states seen.", station_id=test_station_id)
                             self.station_print("Please address hall issues before continuing.", station_id=test_station_id)
                             
                             # Release only this station
@@ -922,7 +927,7 @@ class stage_checkout():
                         raise TestSequenceAbort(error_msg)
                     
                 else:
-                    self.process_hall_results(axis, station_id, rotated_hall_states, self.pri_fbk[axis], 
+                    self.process_hall_results(axis, station_id, rotated_hall_states, rotated_encoder_positions, 
                                             hall_order_valid, encoder_direction, self.unique_hall_states[axis])    
             except Exception as e:
                 self.station_print(f"Error collecting hall data for {axis}: {str(e)}", station_id=station_id)
@@ -1102,7 +1107,6 @@ class stage_checkout():
         
         # Start configuration threads
         for axis in self.test_axes:
-            print(f'Configuring axis in {self.test_axes}')
             thread = self.create_tracked_thread(target=configure_axis, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
@@ -1489,9 +1493,9 @@ class stage_checkout():
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
         self.hardstop_pos[axis][limit] = end_position
-        
+        station_id = self.axis_to_station_map.get(axis)
         # Log the position of the current limit
-        self.stage_info.info(f'{limit} hardstop Position for {axis}: {end_position}')
+        self.log_only(f'{limit} hardstop Position for {axis}: {end_position}', station_id=station_id)
         
     def log_limit_pos(self, axis, limit, results):
         """Logs the current position of the given axis after it has reached its limit."""
@@ -1537,9 +1541,9 @@ class stage_checkout():
         
         # Store position with the limit type as key ('Ccw' or 'Cw')
         self.limit_pos[axis][limit] = end_position
-        
+        station_id = self.axis_to_station_map.get(axis)
         # Log the position of the current limit
-        self.stage_info.info(f'{limit} limit Position for {axis}: {end_position}')
+        self.log_only(f'{limit} limit Position for {axis}: {end_position}', station_id=station_id)
 
     def reset_controllers(self):
         """
@@ -1603,7 +1607,7 @@ class stage_checkout():
             # Check limit travel
             if limit_distance < limit_spec:
                 self.station_print(f"{axis} is failing with a limit travel of {round(limit_distance, 4)} and a spec of {limit_spec}", station_id=station_id)
-                self.stage_info.info(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}')
+                self.log_only(f'Axis {axis} is failing with a limit travel of {round(limit_distance, 4)}', station_id=station_id)
                 
                 # Ask user if they want to continue despite limit travel failure
                 response = messagebox.askyesno(
@@ -1638,7 +1642,7 @@ class stage_checkout():
             # Check hardstop travel
             if hardstop_distance < hardstop_spec:
                 self.station_print(f"{axis} is failing with a hardstop travel of {round(hardstop_distance, 4)} and a spec of {hardstop_spec}", station_id=station_id)
-                self.stage_info.info(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}')
+                self.log_only(f'Axis {axis} is failing with a hardstop travel of {round(hardstop_distance, 4)}', station_id=station_id)
                 
                 # Ask user if they want to continue despite hardstop travel failure
                 response = messagebox.askyesno(
@@ -1672,15 +1676,15 @@ class stage_checkout():
             self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
             #self.station_print(f'Axis {axis}: CCW Limit Position = {ccw_limit_position}, CW Limit Position = {cw_limit_position}, Limit Distance = {limit_distance}', station_id=station_id)
             #self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
-            self.stage_info.info(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}')
-            self.stage_info.info(f'Axis {axis} Distance between Ccw hardstop and Cw hardstop: {hardstop_distance}')
+            self.log_only(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}', station_id=station_id)
+            self.log_only(f'Axis {axis} Distance between Ccw hardstop and Cw hardstop: {hardstop_distance}', station_id=station_id)
 
         # Check if any axes remain
         if not self.test_axes:
             raise TestSequenceAbort("All axes have failed checks. Ending test.")
-        else:
-            station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
-            self.station_print("Continuing with remaining axes...", station_id=station_id)
+        #else:
+            #station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
+            #self.station_print("Continuing with remaining axes...", station_id=station_id)
 
     def data_config(self, n: int, freq: a1.DataCollectionFrequency, axis: int) -> a1.DataCollectionConfiguration:
         """
@@ -1717,6 +1721,7 @@ class stage_checkout():
         self.cw_fault[axis] = []
         self.pos_error_fault[axis] = []
         self.over_current_fault[axis] = []
+        self.hall_encoder_positions[axis] = []
         
         # Get the data
         halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
@@ -1726,8 +1731,7 @@ class stage_checkout():
         # Track unique states to stop after one complete sequence
         seen_states = set()
         
-        # Process hall states
-        for x in halls:
+        for i, x in enumerate(halls):
             # Stop if we've seen all 6 states
             if len(seen_states) >= 6:
                 break
@@ -1747,6 +1751,8 @@ class stage_checkout():
                 self.hall_a[axis].append(hall_a)
                 self.hall_b[axis].append(hall_b)
                 self.hall_states[axis].append(hall_state)
+                # Store encoder position
+                self.hall_encoder_positions[axis].append(self.pri_fbk[axis][i])
                 seen_states.add(hall_state)
 
         # Process faults
@@ -1772,7 +1778,7 @@ class stage_checkout():
         os.makedirs(self.job_log_dir, exist_ok=True)
 
         # Configure the first log file for fault logging
-        fault_log_file = os.path.join(self.job_log_dir, f'Strut Checkout Station Fault Log {self.job}.log')
+        fault_log_file = os.path.join(base_log_dir, f'Strut Checkout Station Fault Log.log')
         self.fault_log = logging.getLogger('fault_log')
         fault_handler = logging.FileHandler(fault_log_file)
         fault_handler.setLevel(logging.INFO)
@@ -1782,7 +1788,7 @@ class stage_checkout():
         self.fault_log.setLevel(logging.INFO)
 
         # Configure the second log file for limit information logging
-        self.stage_log_file = os.path.join(self.job_log_dir, f'{self.job} Stage Info.log')
+        self.stage_log_file = os.path.join(base_log_dir, f'Strut Checkout Station.log')
         self.stage_info = logging.getLogger('stage_info')
         stage_handler = logging.FileHandler(self.stage_log_file)
         stage_handler.setLevel(logging.INFO)
@@ -1832,15 +1838,15 @@ class stage_checkout():
         """
         if hall_order_valid:
             self.station_print(f'Hall states for {axis} are in the correct order.', station_id=station_id)
-            self.stage_info.info(f'Hall states for {axis} are in the correct order.')
+            self.log_only(f'Hall states for {axis} are in the correct order.')
             self.data[f"Axis: {axis}"]["Halls"] = "Passed"
         else:
             self.station_print(f'Hall states for {axis} are NOT in the correct order:', station_id=station_id)
             self.station_print(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
             self.station_print(f'Observed states: {unique_hall_states}', station_id=station_id)
-            self.stage_info.info(f'Hall states for {axis} are NOT in the correct order.')
-            self.stage_info.info(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence')
-            self.stage_info.info(f'Observed states: {unique_hall_states}')
+            self.log_only(f'Hall states for {axis} are NOT in the correct order.', station_id=station_id)
+            self.log_only(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
+            self.log_only(f'Observed states: {unique_hall_states}', station_id=station_id)
             self.data[f"Axis: {axis}"]["Halls"] = "Failed"
 
             self.station_print("Please address hall issues before continuing.", station_id=station_id)
@@ -1860,10 +1866,10 @@ class stage_checkout():
         
         # Log encoder values at each hall state transition
         #self.station_print(f'Encoder values at hall transitions for {axis}:', station_id=station_id)
-        self.stage_info.info(f'Encoder values at hall transitions for {axis}:')
+        self.log_only(f'Encoder values at hall transitions for {axis}:', station_id=station_id)
         for state, value in zip(hall_states, encoder_values):
             #self.station_print(f'State {state}: {value}', station_id=station_id)
-            self.stage_info.info(f'State {state}: {value}')
+            self.log_only(f'State {state}: {value}', station_id=station_id)
 
     def cleanup_data_structures(self, station_id, axis):
         """
@@ -1981,3 +1987,22 @@ class stage_checkout():
             
             # Store logger reference
             self.station_loggers[station_id] = station_logger
+
+    def log_only(self, message, station_id=None):
+        """Log message to station's log file without printing to UI."""
+        if station_id:
+            # Ensure directory exists
+            serial_dir = os.path.join(self.job_log_dir)  # Remove duplicate serial number
+            os.makedirs(serial_dir, exist_ok=True)
+            
+            if isinstance(station_id, list):
+                for sid in station_id:
+                    station_log_file = os.path.join(serial_dir, f'ST{sid:02d}_log.txt')
+                    with open(station_log_file, 'a') as f:
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+                        f.write(f'{timestamp} - INFO - {message}\n')
+            else:
+                station_log_file = os.path.join(serial_dir, f'ST{station_id:02d}_log.txt')
+                with open(station_log_file, 'a') as f:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+                    f.write(f'{timestamp} - INFO - {message}\n')

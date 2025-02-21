@@ -78,24 +78,27 @@ class burn_in():
 
         self.cycle_log_position = None  # Add this line
         self.station_manager = get_station_manager()
-    def station_print(self, message, station_id=None):
-        """
-        Print a message to specific station(s) text_widget or all stations.
-        Only prints to stations that are part of this test.
-        """
+        
+    def station_print(self, message, station_id=None, overwrite=False):
+        """Print a message to specific station(s) text_widget or all stations."""
         if station_id is None:
-            # Only print to stations involved in this test
             for axis in self.test_axes:
                 sid = self.axis_to_station_map.get(axis)
                 if sid in self.station_loggers:
-                    self.station_loggers[sid].write(message + "\n")
+                    if overwrite:
+                        self.station_loggers[sid].write_overwrite(message + "\n")
+                    else:
+                        self.station_loggers[sid].write(message + "\n")
         else:
             if not isinstance(station_id, list):
                 station_id = [station_id]
             
             for sid in station_id:
                 if sid in self.station_loggers:
-                    self.station_loggers[sid].write(message + "\n")
+                    if overwrite:
+                        self.station_loggers[sid].write_overwrite(message + "\n")
+                    else:
+                        self.station_loggers[sid].write(message + "\n")
 
     def reset_stdout(self):
         """
@@ -234,7 +237,7 @@ class burn_in():
         def collect_axis_data(axis):
             controller = self.station_controllers[axis]
             station_id = self.axis_to_station_map.get(axis)
-            self.station_print(f'Collecting Data for cycle number: {cycle}', station_id=station_id)
+            #self.station_print(f'Collecting Data for cycle number: {cycle}', station_id=station_id)
             
             n = int(self.sample_rate * self.total_time)
             freq = a1.DataCollectionFrequency.Frequency1kHz
@@ -274,9 +277,8 @@ class burn_in():
 
     def four_hour_burnin(self):
         """Execute burn-in process with proper cycle counting for parallel operations."""
-        current_date = datetime.date.today()
-        current_time = datetime.datetime.now().time()
-        self.stage_info.info(f'Burn in started on {current_date} at {current_time}')
+        
+        self.stage_info.info(f'Burn in started for {self.job}, On Station(s): {", ".join(self.test_axes)}')
         
         self.axis_data = {}
         
@@ -482,8 +484,10 @@ class burn_in():
                 self.fault_log.error(f"Burn-in error on axis {axis}: {decoded_faults[axis]}")
 
     def _log_cycle_progress(self, cycle):
+        """Log cycle progress to file and update UI for each station."""
         cycle_log_message = f'Cycle Number: {cycle}/{self.cycles} at {self.current_date} {self.current_time}'
         
+        # Log to file
         if self.cycle_log_position is None:
             with open(self.stage_log_file, 'a') as log_file:
                 self.cycle_log_position = log_file.tell()
@@ -492,14 +496,18 @@ class burn_in():
             with open(self.stage_log_file, 'r+') as log_file:
                 log_file.seek(self.cycle_log_position)
                 log_file.write(cycle_log_message + '\n')
+        
+        # Update UI for each station using station_print
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map[axis]
+            self.station_print(cycle_log_message + '\n', station_id=station_id, overwrite=True)
 
     def handle_burnin_error(self, error, axis):
         """Handle errors during burn-in."""
-        self.stage_info.info(f"Handling burn-in error for axis {axis}")
+        self.stage_info.info(f"Handling burn-in error on station {axis}")
         
         # Release just this station
         station_id = self.axis_to_station_map[axis]  # Get station directly from the map
-        self.stage_info.info(f"Found station_id: {station_id} for axis {axis}")
         
         if station_id:
             station_manager = get_station_manager()
