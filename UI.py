@@ -281,10 +281,12 @@ def UI():
         
         try:
             # Try to allocate stations
+            station_manager.refresh_station_status()
             allocated_stations = station_manager.allocate_stations(
                 num_stations, program_id, serial_number
             )
             print(f'Allocated Stations: {allocated_stations}')
+            messagebox.showinfo("Connect Stages", f"Connect stages to the following stations: {allocated_stations}. Press OK to continue.")
             if allocated_stations is None:
                 messagebox.showwarning(
                     "No Stations Available", 
@@ -344,9 +346,18 @@ def UI():
                     )
                 finally:
                     # Always release stations when done
-                    station_manager.release_stations(allocated_stations)
+                    try:
+                        if allocated_stations:  # Only try to release if we have stations
+                            station_manager.release_stations(allocated_stations)
+                            previously_allocated_stations.remove(allocated_stations)
+                    except ValueError as e:
+                        print(f"Station Release Error (likely already released): {str(e)}")
+                    except Exception as e:
+                        print(f"Unexpected error during station release: {str(e)}")
                     secondary_ui.update_station_status(new_stations, running=False, serial="")
+                    available_stations = station_manager.get_available_stations()
                     print(f"Stations {new_stations} are now free.")
+                    print(f"Available Stations: {available_stations}")
                     window.after(0, lambda: btn_run.config(state=tk.NORMAL))
 
             # Disable run button during test

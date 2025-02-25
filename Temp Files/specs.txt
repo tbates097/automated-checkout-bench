@@ -1,39 +1,23 @@
 NumAxes:1.0 
-Motor:BMS100 (Winding Designation : "-A", Feedback : "-E2500H", Brake : "") 
-ScrewLead:5.0 mm
-ScrewInertia:5.9e-06 kg-m-m
-ScrewEfficiency:0.9 
-ScrewFriction:0.05 N-m
-LinearFrictionForce:3.0 N
-HasFoldback:0 
-FoldbackFriction:0.0 N-m
-TransmissionRatio:1.0 
-WedgeRatio:1.0 
+Motor:SF-75-21 (Performance Grade : "-2X (ANT-R)") 
+FrictionTorque:0.083326 N·m
 MotorCurrentDerateFactor:1.0 
-PrmFbkType:SQR 
-PrmFbkFinalCntsPerRev:10000.0 
-PrmIncFbkRawCntsPerRev:2500.0 
-PrmAbsFbkBits:0.0 
-PrmAbsFbkInverted: 
-AuxFbkType: 
-AuxFbkFinalResolution:0.0 µm
-AuxIncFbkRawResolution:0.0 µm
-AuxAbsFbkBits:0.0 
-AuxAbsFbkInverted: 
+PrmFbkType:SIN 
+PrmFbkFinalCntsPerRev:11840.0 
+PrmIncFbkRawCntsPerRev:11840.0 
 LimitType:SWITCH 
-NominalTravel:100.0 mm
-LimitToLimitTravel:111.6 mm
-HardToHard-FirstContact:125.0 mm
-HardToHard-Compressed:125.0 mm
-LimitDecelDistance:4.7 mm
-MaxSpeed:300.0 mm/s
-DefaultSpeed:40.0 mm/s
-DefaultRampRate:1000.0 mm/s/s
-HomeSpeed:40.0 mm/s
-HomeRampRate:500.0 mm/s/s
-MovingMass:1.5 kg
-TotalMass:7.5 kg
-URL:https://www.aerotech.com/product/stages-actuators/pro165sl-and-sle-mechanical-bearing-ball-screw-stage/ 
-LimitPolarity:NC 
-HasBrake:0 
+NominalTravel:20.0 deg
+LimitToLimitTravel:30.0 deg
+HardToHard-FirstContact:54.0 deg
+HardToHard-Compressed:54.0 deg
+LimitDecelDistance:10.8 deg
+MaxSpeed:120.0 deg/s
+DefaultSpeed:60.0 deg/s
+DefaultRampRate:200.0 deg/s/s
+HomeSpeed:20.0 deg/s
+HomeRampRate:100.0 deg/s/s
+RotationalInertia:0.00059686 kg·m·m
+TotalMass:1.596649 kg
+UseLinearUnits:0.0 
+URL:https://www.aerotech.com/product/stages-actuators/ant95r-series-single-axis-rotary-direct-drive-nanopositioning-stages/ 
 ThermistorAvailable:1.0 

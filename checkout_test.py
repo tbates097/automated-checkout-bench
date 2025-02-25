@@ -14,13 +14,17 @@ import tkinter as tk
 from tkinter import messagebox
 import time
 import re
+import numpy as np
 import datetime
 from datetime import datetime
+import json
 from collections import deque
 import threading
+from station_manager import StationManager
 from station_manager_instance import get_station_manager
 from exceptions import TestSequenceAbort
 from BurnIn import burn_in
+from MCDComparison import MCDComparison
 
 #sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
@@ -94,10 +98,17 @@ class stage_checkout():
                     # Don't clear the text widget, just create a logger for it
                     self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"], clear_existing=False)
         
+        self.hall_dict = {
+            0: "001",
+            60: "011",
+            120: "010",
+            180: "110",
+            240: "100",
+            300: "101",
+            
+        }
         self.window = tk.Tk()
         self.window.withdraw()
-        
-        self.station_manager = get_station_manager()
         
         # Initialize hall sensor dictionaries
         self.hall_a = {}
@@ -229,6 +240,31 @@ class stage_checkout():
         self.active_threads.append(thread)
         return thread
 
+    def load_new_params(self, controller, data, axis, axis_index="0"):
+        # Retrieve current configuration parameters for the axis
+        configured_parameters = controller.configuration.parameters.get_configuration()
+        
+        if not data or axis_index not in data:
+            print(f"No parameter differences found for Axis {axis}. Configuration unchanged.")
+            return
+    
+        for param, value in data[axis_index].items():
+            # Properly format numbers and strings
+            # Convert to float if it contains a decimal, otherwise int
+            if isinstance(value, str) and value.replace('.', '', 1).lstrip('-').isdigit():
+                formatted_value = float(value) if '.' in value else int(value)
+            else:
+                formatted_value = f'"{value}"'  # Wrap only actual strings in quotes
+
+            # Construct the API command dynamically
+            api_command = f"configured_parameters.axes['{axis}'][a1.AxisParameterId.{param}].value = {formatted_value}"
+
+            # Simulate sending the command (Replace `exec` with actual API call)
+            exec(api_command)  # Uncomment this line if you want it to actually execute
+
+        controller.configuration.parameters.set_configuration(configured_parameters)
+        controller.reset()
+        
     def test(self, reenable_run_button, station_controllers):
         """
         Main entry point for the checkout process.
@@ -291,10 +327,17 @@ class stage_checkout():
 
         self.nominal_travel = self.specs_dict.get('NominalTravel')
         self.mdk_path = fr'C:\Users\tbates\Documents\Automation1\{self.stage_type}.mcd'
+
         # Configure initial parameters for each axis
         for axis in self.test_axes:
             controller = self.station_controllers[axis]
-            controller.upload_mcd_to_controller(self.mdk_path, should_include_files=True, should_include_configuration=True, erase_controller=False)
+            mcd_comparison = MCDComparison(self.stage_type, controller)
+            mcd_comparison.compare_mcd_files()
+            json_path = 'parameters_comparison.json'
+
+            with open(json_path, 'r') as file:
+                data = json.load(file)
+            self.load_new_params(controller, data, axis)
             if self.absolute:
                 self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
             else:
@@ -308,40 +351,24 @@ class stage_checkout():
         self.enable_stages()
         time.sleep(5)
         # Check Halls
-        for axis in self.test_axes:
-            controller = self.station_controllers[axis]
-            commutation = controller.runtime.parameters.axes[axis].motor.commutationinitializationsetup.value
-        if commutation == 0:
-            try:
+        try:
+            for axis in self.test_axes:
+                controller = self.station_controllers[axis]
+                commutation = controller.runtime.parameters.axes[axis].motor.commutationinitializationsetup.value
+            if commutation == 0:
                 self.check_halls()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-        # Split the test to Absolute and Incremental
-        if self.absolute:
-            try:
+            # Split the test to Absolute and Incremental
+            if self.absolute:
                 # Check Hardstop
                 self.absolute_hardstop()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")    
-            try:
                 # Set Offset
                 self.calculate_home_offset()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Set limits
                 self.software_limits()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Burn in
                 BI = burn_in(
                         self.speed, 
@@ -365,49 +392,25 @@ class stage_checkout():
                     )
                 # Pass the station controllers to burn-in
                 BI.initialize_burnin(self.station_controllers)
-
                 populate_sheet = Sheets(self.job, self.data)
                 populate_sheet.populate_sheet()
-
                 time.sleep(5)
                 self.home_stages()
                 station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
                 self.station_print("All tests completed.", station_id=station_id)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            finally:
-                self.perform_test_cleanup()   # Any final cleanup if needed
-        else:
-            try:
+            else:
                 # Home Stages
                 self.home_stages()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Check Hardstop
                 self.check_hardstop()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Calculate Home Offset
                 self.calculate_home_offset()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Set limits
                 self.software_limits()
                 time.sleep(5)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            try:
                 # Burn in
                 # Initialize burn-in with the station controllers
                 BI = burn_in(
@@ -435,16 +438,20 @@ class stage_checkout():
                 print(f'Data To Sheet: {self.data}')
                 populate_sheet = Sheets(self.job, self.data)
                 populate_sheet.populate_sheet()
-
                 time.sleep(5)
                 self.home_stages()
                 station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
                 self.station_print("All tests completed.", station_id=station_id)
-            except TestSequenceAbort as e:
-                messagebox.showerror("Test Sequence Aborted", str(e))
-                self.station_print(f"Test sequence aborted: {str(e)}")
-            finally:
-                self.perform_test_cleanup()
+        except TestSequenceAbort as e:
+            messagebox.showerror("Test Sequence Aborted", str(e))
+            #self.station_print(f"Test sequence aborted: {str(e)}")
+        finally:
+            try:
+                for axis in self.test_axes:
+                    station_id = self.axis_to_station_map[axis]
+                    self.cleanup_data_structures(station_id, axis)
+            except Exception as e:
+                self.fault_log.error(f"Error during cleanup: {str(e)}")
             
     def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None):
         """
@@ -545,8 +552,8 @@ class stage_checkout():
                                     self.home_stages()
                                     self.check_hardstop()
                                 else:
-                                    self.release_station = self.station_manager.release_station
-                                    self.release_station(station_id)
+                                    #station_manager = get_station_manager()
+                                    #station_manager.release_stations(station_id)
                                     self.secondary_ui.update_station_status(station_id, running=False, serial="")
                                     controller = self.station_controllers[axis]
                                     controller.runtime.commands.motion.disable([axis])
@@ -572,8 +579,8 @@ class stage_checkout():
                                 else:
                                     # Re-enable the "Run" button and stop further execution
                                     self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                                    self.release_station = self.station_manager.release_station
-                                    self.release_station(station_id)
+                                    #station_manager = get_station_manager()
+                                    #station_manager.release_stations(station_id)
                                     self.secondary_ui.update_station_status(station_id, running=False, serial="")
                                     controller = self.station_controllers[axis]
                                     controller.runtime.commands.motion.disable([axis])
@@ -600,8 +607,8 @@ class stage_checkout():
                                 self.home_stages()
                                 self.check_hardstop()
                             else:
-                                self.release_station = self.station_manager.release_station
-                                self.release_station(station_id)
+                                #station_manager = get_station_manager()
+                                #station_manager.release_stations(station_id)
                                 self.secondary_ui.update_station_status(station_id, running=False, serial="")
                                 controller = self.station_controllers[axis]
                                 controller.runtime.commands.motion.disable([axis])
@@ -626,8 +633,8 @@ class stage_checkout():
                     else:
                         # Re-enable the "Run" button and stop further execution
                         self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                        self.release_station = self.station_manager.release_station
-                        self.release_station(station_id)
+                        #station_manager = get_station_manager()
+                        #station_manager.release_stations(station_id)
                         self.secondary_ui.update_station_status(station_id, running=False, serial="")
                         controller = self.station_controllers[axis]
                         controller.runtime.commands.motion.disable([axis])
@@ -711,8 +718,8 @@ class stage_checkout():
                         else:
                             # Handle case where axis is in use
                             self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                            self.release_station = self.station_manager.release_station
-                            self.release_station(station_id)
+                            #station_manager = get_station_manager()
+                            #station_manager.release_stations(station_id)
                             self.secondary_ui.update_station_status(station_id, running=False, serial="")
                             controller = self.station_controllers[axis]
                             controller.runtime.commands.motion.disable([axis])
@@ -797,20 +804,23 @@ class stage_checkout():
         hall_check_step = self.get_spec_value('NominalTravel')
         hall_check_vel = 5
 
-        test_time = hall_check_step / hall_check_vel + 10
+        test_time = 22
         n = int(self.sample_rate * test_time)
         freq = a1.DataCollectionFrequency.Frequency1kHz
         
         # Move to CCW limit in parallel
         threads = []
-        def move_to_limit(axis):
+        def move_to_start(axis):
             controller = self.station_controllers[axis]
             controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
             controller.runtime.commands.motion.waitformotiondone([axis], 1)
             time.sleep(2)
+            controller.runtime.commands.motion.moveincremental([axis], [10], [5])
+            controller.runtime.commands.motion.waitformotiondone([axis], 1)
+            time.sleep(2)
         
         for axis in self.test_axes:
-            thread = self.create_tracked_thread(target=move_to_limit, axis=axis, args=(axis,))
+            thread = self.create_tracked_thread(target=move_to_start, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
         
@@ -821,116 +831,146 @@ class stage_checkout():
         threads = []
         
         def collect_hall_data(axis):
+            #try:
+            controller = self.station_controllers[axis]
+            station_id = self.axis_to_station_map.get(axis)
+            test_station_id = station_id
+
+            angle = 0
+            current_threshold = controller.runtime.parameters.axes[axis].protection.averagecurrentthreshold.value
+            current = current_threshold / 2
+
+            with _thread_lock:
+                # Configure data collection
+                data_config = self.data_config(n, freq, axis)
+                
+            # Start data collection and move
+            controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
+            time.sleep(0.1)
+            
             try:
-                controller = self.station_controllers[axis]
-                station_id = self.axis_to_station_map.get(axis)
-                
-                with _thread_lock:
-                    # Configure data collection
-                    data_config = self.data_config(n, freq, axis)
-                    
-                # Start data collection and move
-                controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
-                time.sleep(0.1)
-                
-                try:
-                    controller.runtime.commands.motion.enable([axis])
-                    controller.runtime.commands.motion.moveincremental([axis], [hall_check_step], [hall_check_vel])
-                    controller.runtime.commands.motion.waitformotiondone([axis], 1)
-                except (ControllerAxisFaultException, ControllerOperationException):
-                    error_message = "Axis fault occurred during enable."
-                    faults_per_axis = self.check_for_faults(controller, [axis])
-                    fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
-                    decoded_faults = fault_init.get_fault()
-                    self.fault_log.info(f'A fault occurred on {axis}: {decoded_faults}')
-                    messagebox.showerror("Axis Fault", error_message)
-                    return
-                
-                time.sleep(10)
-                
-                controller.runtime.data_collection.stop()
-                # Get results and populate instance variables
-                axis_results = controller.runtime.data_collection.get_results(data_config, n)
-                
-                self.populate(axis, axis_results)
-                
-                # Initialize unique state tracking for this axis if not already done
-                if axis not in self.unique_hall_states:
-                    self.unique_hall_states[axis] = []
-                
-                seen_states = set()
-                last_state = None
-                
-                # Now access axis-specific data from dictionaries
-                for i, state in enumerate(self.hall_states[axis]):
-                    if len(seen_states) >= 6:
-                        break
-                    
-                    if state not in seen_states:
-                        self.unique_hall_states[axis].append(state)
-                        seen_states.add(state)
-                        last_state = state
-                
-                # Validate hall sequence
-                expected_order_cw = ["100", "101", "001", "011", "010", "110"]
-                expected_order_ccw = expected_order_cw[::-1]
-                
-                # Calculate encoder direction by comparing first and last values
-                start_pos = self.pri_fbk[axis][0]
-                end_pos = self.pri_fbk[axis][-1]
-                encoder_direction = "positive" if end_pos > start_pos else "negative"
-                
-                self.log_only(f"Axis {axis} direction check - Start: {start_pos}, End: {end_pos}, Direction: {encoder_direction}", station_id=station_id)
-                
-                # We commanded a positive move, so check if encoder direction matches
-                if encoder_direction == "negative":
-                    confirm = messagebox.askyesno(
-                        'Encoder Direction Mismatch',
-                        f'Axis {axis} was commanded to move positive but encoder shows negative motion. Is this intentional?'
-                    )
-                    if not confirm:
-                        self.station_print(f'Encoder direction mismatch on axis {axis}. Please check encoder wiring.', station_id=station_id)
-                        raise TestSequenceAbort(f"Encoder direction mismatch on axis {axis}")
-
-                # Use the actual encoder direction to determine expected sequence
-                if encoder_direction == "positive":
-                    rotated_hall_states, rotated_encoder_positions = self.rotate_to_match_start(self.unique_hall_states[axis], self.hall_encoder_positions[axis])
-                    hall_order_valid = rotated_hall_states == expected_order_cw
+                while angle < 350:
+                    controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, angle)
+                    angle += 60
+                    time.sleep(3)
+            except (ControllerAxisFaultException, ControllerOperationException):
+                error_message = "Axis fault occurred during MSET commands."
+                faults_per_axis = self.check_for_faults(controller, [axis])
+                fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                decoded_faults = fault_init.get_fault()
+                self.fault_log.info(f'A fault occurred on {axis}: {decoded_faults}')
+                messagebox.showerror("Axis Fault", error_message)
+                return
+            
+            time.sleep(10)
+            
+            controller.runtime.data_collection.stop()
+            controller.runtime.commands.motion.abort([axis])
+            controller.runtime.commands.motion.enable([axis])
+            # Get results and populate instance variables
+            axis_results = controller.runtime.data_collection.get_results(data_config, n)
+            
+            self.populate(axis, axis_results)
+            
+            sequence = []
+            # Validate State at each Angle
+            for electrical_angle, hall_state in self.hall_states[axis].items():
+                if hall_state == self.hall_dict[electrical_angle]:
+                    sequence.append(hall_state)
                 else:
-                    rotated_hall_states, rotated_encoder_positions = self.rotate_to_match_start(self.unique_hall_states[axis], expected_order_ccw)
-                    hall_order_valid = rotated_hall_states == expected_order_ccw
-                
-                # Process results
-                if len(rotated_hall_states) < 6:
-                    affected_stations = []
-                    for test_axis in self.test_axes:
-                        test_station_id = self.axis_to_station_map.get(test_axis)
-                        if test_station_id and test_station_id in self.station_loggers:
-                            affected_stations.append(test_station_id)
-                            self.station_print(f'Not all hall states seen on axis {test_axis}', station_id=test_station_id)
-                            self.log_only(f"A fault occurred on {test_axis}. Not all hall states seen.", station_id=test_station_id)
-                            self.station_print("Please address hall issues before continuing.", station_id=test_station_id)
-                            
-                            # Release only this station
-                            station_manager = get_station_manager()
-                            station_manager.release_station(test_station_id)
-                            self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                    self.station_print(f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}", station_id=station_id)
+                    self.log_only(f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}", station_id=station_id)
+                    messagebox.showerror("Hall State Mismatch", f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}")
+                    # Release only this station
+                    #station_manager = get_station_manager()
+                    #station_manager.release_stations(test_station_id)
+                    self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                    if axis in self.test_axes:
+                        self.test_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+            
+            # Validate Encoder Direction
+            start_pos = self.hall_encoder_positions[axis][0]
+            end_pos = self.hall_encoder_positions[axis][300]
+            encoder_direction = "positive" if end_pos > start_pos else "negative"
+            
+            if encoder_direction == "negative":
+                self.station_print(f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.", station_id=station_id)
+                self.log_only(f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.", station_id=station_id)
+                messagebox.showerror("Encoder Direction Mismatch", f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.")
+                # Release only this station
+                #station_manager = get_station_manager()
+                #station_manager.release_stations(test_station_id)
+                self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                if axis in self.test_axes:
+                    self.test_axes.remove(axis)
+                if axis in self.station_controllers:
+                    del self.station_controllers[axis]
 
-                            if test_axis in self.test_axes:
-                                self.test_axes.remove(test_axis)
-                            if test_axis in self.station_controllers:
-                                del self.station_controllers[test_axis]
-                    
-                    if not self.test_axes:
-                        error_msg = "Please address hall issues on affected axes. Ending test."
-                        messagebox.showerror("Test Sequence Aborted", error_msg)
-                        raise TestSequenceAbort(error_msg)
-                    
+            # Validate Hall Sequence
+            if encoder_direction == "positive":
+                expected_order_cw = ["001", "011", "010", "110", "100", "101"]
+                if sequence == expected_order_cw:
+                    self.station_print(f"Hall sequence is correct on axis {axis}", station_id=station_id)
+                    self.log_only(f"Hall sequence is correct on axis {axis}", station_id=station_id)
                 else:
-                    self.process_hall_results(axis, station_id, rotated_hall_states, rotated_encoder_positions, 
-                                            hall_order_valid, encoder_direction, self.unique_hall_states[axis])    
-            except Exception as e:
-                self.station_print(f"Error collecting hall data for {axis}: {str(e)}", station_id=station_id)
+                    self.station_print(f"Hall sequence is incorrect on axis {axis}", station_id=station_id)
+                    self.log_only(f"Hall sequence is incorrect on axis {axis}", station_id=station_id)
+                    messagebox.showerror("Hall Sequence Mismatch", f"Hall sequence is incorrect on axis {axis}")
+                    # Release only this station
+                    #station_manager = get_station_manager()
+                    #station_manager.release_stations(test_station_id)
+                    self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                    if axis in self.test_axes:
+                        self.test_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+
+            # Validate Pole Pitch
+            #counts_per_unit = controller.runtime.parameters.axes[axis].units.countsperunit.value
+            #pole_pitch_param = controller.runtime.parameters.axes[axis].motor.motorpolepitch.value
+            #delta_x = (self.hall_encoder_positions[axis][60]/counts_per_unit) - (self.hall_encoder_positions[axis][0]/counts_per_unit)
+            #pole_pitch = round((6*delta_x) / 2, 1)
+            #if pole_pitch != pole_pitch_param:
+                #self.station_print(f"Pole pitch mismatch on axis {axis}. Please check pole pitch.", station_id=station_id)
+                #self.log_only(f"Pole pitch mismatch on axis {axis}. Please check pole pitch.", station_id=station_id)
+                #messagebox.showerror("Pole Pitch Mismatch", f"Pole pitch mismatch on axis {axis}. Please check pole pitch and click OK to continue.")
+                #station_manager = get_station_manager()
+                #station_manager.release_stations(test_station_id)
+                #self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                #if axis in self.test_axes:
+                    #self.test_axes.remove(axis)
+                #if axis in self.station_controllers:
+                    #del self.station_controllers[axis]
+
+            # Check Commutation Offset
+            for i, e in self.hall_states[axis].items():
+                if e != self.hall_dict[i]:
+                    correct_angle = self.hall_dict[e]
+                    commutation_offset = abs(i - correct_angle)
+                    self.station_print(f"Commutation offset on axis {axis} is {commutation_offset} degrees.", station_id=station_id)
+                    self.log_only(f"Commutation offset on axis {axis} is {commutation_offset} degrees.", station_id=station_id)
+                    messagebox.showerror("Commutation Offset", f"Commutation offset on axis {axis} is {commutation_offset} degrees. Please click OK to continue.")
+                    #station_manager = get_station_manager()
+                    #station_manager.release_stations(test_station_id)
+                    self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
+                    if axis in self.test_axes:
+                        self.test_axes.remove(axis)
+                    if axis in self.station_controllers:
+                        del self.station_controllers[axis]
+                    break
+
+            if not self.test_axes:
+                error_msg = "Please address hall issues on affected axes. Ending test."
+                messagebox.showerror("Test Sequence Aborted", error_msg)
+                raise TestSequenceAbort(error_msg)   
+            else:
+                self.station_print(f"Halls are correct for axis {axis}", station_id=station_id)
+                self.log_only(f"Halls are correct for axis {axis}", station_id=station_id)
+  
+            #except Exception as e:
+                #self.station_print(f"Error collecting hall data for {axis}: {str(e)}", station_id=station_id)
         
         # Start data collection threads
         for axis in self.test_axes:
@@ -1622,8 +1662,8 @@ class stage_checkout():
                     self.station_print("Please address limit travel issues before continuing.", station_id=station_id)
                     
                     # Release the station and remove from testing
-                    station_manager = get_station_manager()
-                    station_manager.release_station(station_id)
+                    #station_manager = get_station_manager()
+                    #station_manager.release_stations(station_id)
                     self.secondary_ui.update_station_status(station_id, running=False, serial="")
                     controller = self.station_controllers[axis]
                     controller.runtime.commands.motion.disable([axis])
@@ -1657,8 +1697,8 @@ class stage_checkout():
                     self.station_print("Please address hardstop travel issues before continuing.", station_id=station_id)
                     
                     # Release the station and remove from testing
-                    station_manager = get_station_manager()
-                    station_manager.release_station(station_id)
+                    #station_manager = get_station_manager()
+                    #station_manager.release_stations(station_id)
                     self.secondary_ui.update_station_status(station_id, running=False, serial="")
                     controller = self.station_controllers[axis]
                     controller.runtime.commands.motion.disable([axis])
@@ -1711,9 +1751,13 @@ class stage_checkout():
         """
         Populate the hall sensor and primary feedback data structures based on the results of a data collection run.
         """
-        # Initialize dictionary entries for this axis
-        self.hall_states[axis] = []
-        self.pri_fbk[axis] = []
+        # Initialize dictionary entries for this axis with nested structure
+        if axis not in self.hall_states:
+            self.hall_states[axis] = {}
+        if axis not in self.hall_encoder_positions:
+            self.hall_encoder_positions[axis] = {}
+        
+        # Initialize other lists
         self.hall_a[axis] = []
         self.hall_b[axis] = []
         self.hall_c[axis] = []
@@ -1721,40 +1765,36 @@ class stage_checkout():
         self.cw_fault[axis] = []
         self.pos_error_fault[axis] = []
         self.over_current_fault[axis] = []
-        self.hall_encoder_positions[axis] = []
+        
+        # Define check points (in seconds) and corresponding electrical angles
+        check_points = [1.5, 4.5, 7.5, 10.5, 13.5, 16.5]
+        electrical_angles = [0, 60, 120, 180, 240, 300]  # degrees
         
         # Get the data
         halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
+        pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
         faults = results.axis.get(a1.AxisDataSignal.AxisFault, axis).points
-        self.pri_fbk[axis] = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
-
-        # Track unique states to stop after one complete sequence
-        seen_states = set()
+        self.time_array = np.array(results.system.get(a1.SystemDataSignal.DataCollectionSampleTime).points)
+        self.time_array -= self.time_array[0]
+        self.time_array *= .001 #msec to sec
+        self.time_array = self.time_array.tolist()
         
-        for i, x in enumerate(halls):
-            # Stop if we've seen all 6 states
-            if len(seen_states) >= 6:
-                break
+        for i, t in enumerate(self.time_array):
+            self.time_array[i] = i/self.sample_rate
             
-            # Extract individual hall states in C,A,B order
-            hall_c = 1 if ((int(x) & a1.DriveStatus.HallCInput.value) > 0) else 0
-            hall_a = 1 if ((int(x) & a1.DriveStatus.HallAInput.value) > 0) else 0
-            hall_b = 1 if ((int(x) & a1.DriveStatus.HallBInput.value) > 0) else 0
-            
-            # Create combined hall state string in C,A,B order
-            hall_state = f"{hall_c}{hall_a}{hall_b}"
-            
-            # Only add new states
-            if hall_state not in seen_states:
-                # Store individual hall states
-                self.hall_c[axis].append(hall_c)
-                self.hall_a[axis].append(hall_a)
-                self.hall_b[axis].append(hall_b)
-                self.hall_states[axis].append(hall_state)
-                # Store encoder position
-                self.hall_encoder_positions[axis].append(self.pri_fbk[axis][i])
-                seen_states.add(hall_state)
-
+            # Check if we're at one of our target times
+            check_time = check_points[len(self.hall_states[axis].keys())] if len(self.hall_states[axis].keys()) < len(check_points) else None
+            if check_time and abs(self.time_array[i] - check_time) < (1/self.sample_rate):
+                hall_a = 1 if ((int(halls[i]) & a1.DriveStatus.HallAInput.value) > 0) else 0
+                hall_b = 1 if ((int(halls[i]) & a1.DriveStatus.HallBInput.value) > 0) else 0
+                hall_c = 1 if ((int(halls[i]) & a1.DriveStatus.HallCInput.value) > 0) else 0
+                hall_state = f"{hall_a}{hall_b}{hall_c}"
+                current_angle = electrical_angles[len(self.hall_states[axis].keys())]
+                
+                # Store values with angle as key
+                self.hall_states[axis][current_angle] = hall_state
+                self.hall_encoder_positions[axis][current_angle] = pri_fbk[i]
+        
         # Process faults
         for x in faults:
             self.ccw_fault[axis].append(1 if ((int(x) & a1.AxisFault.CcwEndOfTravelLimitFault.value) > 0) else 0)
@@ -1851,8 +1891,8 @@ class stage_checkout():
 
             self.station_print("Please address hall issues before continuing.", station_id=station_id)
             # Release the station and remove from testing
-            station_manager = get_station_manager()
-            station_manager.release_station(station_id)
+            #station_manager = get_station_manager()
+            #station_manager.release_stations(station_id)
             self.secondary_ui.update_station_status(station_id, running=False, serial="")
             controller = self.station_controllers[axis]
             controller.runtime.commands.motion.disable([axis])
@@ -1921,44 +1961,7 @@ class stage_checkout():
             
             for thread in threads_to_remove:
                 self.active_threads.remove(thread)
-    
-    def perform_test_cleanup(self):
-        """
-        Perform cleanup operations after test completion or abort.
-        """
-        current_thread = threading.current_thread()
-        station_manager = get_station_manager()
         
-        # Clean up each station/axis that was being tested
-        for axis in list(self.test_axes):  # Create a copy of the list to iterate
-            try:
-                if axis not in self.station_controllers:
-                    continue
-                
-                controller = self.station_controllers[axis]
-                controller.runtime.data_collection.stop()
-                station_id = self.axis_to_station_map.get(axis)
-                
-                if station_id and station_id in self.station_loggers:  # Only cleanup stations that belong to this test
-                    try:
-                        # Print status messages BEFORE cleanup
-                        self.station_print("Cleanup complete for station", station_id=station_id)
-                        self.station_print(f"Station {station_id} has been released", station_id=station_id)
-                        
-                        # Update UI and release station only for stations in this test
-                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        station_manager.release_station(station_id)
-                        station_manager.refresh_station_status()
-                        
-                        # Do data structure cleanup last
-                        self.cleanup_data_structures(station_id, axis)
-                        
-                    except Exception as cleanup_error:
-                        self.station_print(f"Error during cleanup: {str(cleanup_error)}", station_id=station_id)
-                        self.fault_log.error(f"Cleanup error for station {station_id}: {str(cleanup_error)}")
-            except Exception as e:
-                self.fault_log.error(f"Error during cleanup for axis {axis}: {str(e)}")
-
     def setup_logging(self, serial_number):
         """Setup logging for each station."""
         # Create serial number directory if it doesn't exist

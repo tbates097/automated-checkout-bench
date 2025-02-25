@@ -246,9 +246,9 @@ class burn_in():
             # Start data collection
             controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
             
-            # Wait for moves to complete
-            move_complete.wait()
-            
+            self.forward_move(self.dwell, self.list_velocity)
+            self.reverse_move(self.dwell, self.list_velocity)
+            #move_complete.wait()
             # Get results
             results = controller.runtime.data_collection.get_results(data_config, n)
             data_sample = self.populate(results, axis)
@@ -266,14 +266,14 @@ class burn_in():
             thread.start()
 
         # Execute moves in separate thread (no axis needed as it's just coordinating)
-        move_thread = self.create_tracked_thread(target=execute_moves, args=())
-        threads.append(move_thread)
-        move_thread.start()
+        #move_thread = self.create_tracked_thread(target=execute_moves, args=())
+        #threads.append(move_thread)
+        #move_thread.start()
         
         # Wait for all threads to complete
         for thread in threads:
             thread.join()
-        move_thread.join()
+        #move_thread.join()
 
     def four_hour_burnin(self):
         """Execute burn-in process with proper cycle counting for parallel operations."""
@@ -293,7 +293,6 @@ class burn_in():
         data_interval = self.round_to_nearest(1800 / self.total_time, 1)  # Data every 30 minutes
         
         cycle = 1
-        data_cycle = 1
         
         while cycle <= self.cycles:
             try:
@@ -306,13 +305,13 @@ class burn_in():
                 # Collect data at intervals or first cycle
                 if cycle == 1 or cycle % data_interval == 0:
                     self.burn_in_data(cycle)
-                    data_cycle = cycle
+                    cycle += 2
                 else:
                     # Execute moves without data collection
                     self.forward_move(self.dwell, self.list_velocity)
                     self.reverse_move(self.dwell, self.list_velocity)
                 
-                cycle += 1
+                cycle += 2
             except TestSequenceAbort as e:
                 return
 

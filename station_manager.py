@@ -27,11 +27,6 @@ class StationManager:
             }
             for station in self.station_dict.keys()
         }
-        
-        # Add status display
-        self.status_frame = tk.LabelFrame(window, text="Station Status")
-        self.status_frame.grid(row=0, column=2, rowspan=2, padx=5, pady=5, sticky='nsew')
-        self.status_labels = {}
     
     def load_station_config(self):
         """Load station configuration from file."""
@@ -97,25 +92,6 @@ class StationManager:
                 except Exception as e:
                     print(f"Error checking station status: {e}")
 
-    def _check_single_station(self, station, ip):
-        """Check connectivity of a single station"""
-        try:
-            # Implement your actual connection test here
-            # This is a placeholder - replace with actual connection test
-            return station, True
-        except Exception:
-            return station, False
-
-    def _update_station_status(self, station, is_connected):
-        """Update the status display for a station"""
-        if station in self.station_states:
-            if not is_connected:
-                self.station_states[station]["status"] = "error"
-                self.update_station_display(station, "error")
-            elif self.station_states[station]["status"] != "in-use":
-                self.station_states[station]["status"] = "free"
-                self.update_station_display(station, "free")
-
     def set_station_in_use(self, station, serial_number, program_id):
         """Mark a station as in-use"""
         if station in self.station_states:
@@ -124,17 +100,6 @@ class StationManager:
                 "serial_number": serial_number,
                 "program_id": program_id
             })
-            self.update_station_display(station, "in-use", serial_number)
-
-    def release_station(self, station):
-        """Release a station back to available pool"""
-        if station in self.station_states:
-            self.station_states[station].update({
-                "status": "connected",
-                "serial_number": "",
-                "program_id": None
-            })
-            self.update_station_display(station, "connected")
 
     def get_station_status(self, station):
         """Get the current status of a station"""
@@ -162,26 +127,26 @@ class StationManager:
         
         return allocated
 
-    def release_stations(self, stations):
-        """Release a list of stations"""
-        for station in stations:
-            self.release_station(station)
-
-    def update_station_display(self, station, status, serial=""):
-        """Update the visual status of a station"""
-        if station in self.status_labels:
-            color = {
-                'in-use': 'red',
-                'free': 'green',
-                'error': 'orange'
-            }.get(status, 'gray')
-            
-            self.window.after(0, lambda: self._update_label(station, color, serial))
-
-    def _update_label(self, station, color, serial):
-        """Update label in the main thread"""
-        self.status_labels[station]['indicator'].config(fg=color)
-        self.status_labels[station]['serial'].config(text=serial)
+    def release_stations(self, station):
+        """Release a station back to available pool"""
+        print(f"Releasing station: {station}")
+        if isinstance(station, list):
+            # If a list is passed, release each station in the list
+            for single_station in station:
+                if single_station in self.station_states:
+                    self.station_states[single_station].update({
+                        "status": "free",
+                        "serial_number": "",
+                        "program_id": None
+                    })
+        else:
+            # Original behavior for single station
+            if station in self.station_states:
+                self.station_states[station].update({
+                    "status": "free",
+                    "serial_number": "",
+                    "program_id": None
+                })
 
     def _process_station_update(self, update):
         """Process a station update from the queue"""
@@ -209,15 +174,7 @@ class StationManager:
     def refresh_station_status(self):
         """Refresh the status of all stations."""
         for station_name in self.station_states:
-            if self.station_states[station_name]["status"] != "connected":
+            if self.station_states[station_name]["status"] != "in-use":
                 self.station_states[station_name]["status"] = "free"
                 self.station_states[station_name]["program_id"] = None
                 self.station_states[station_name]["serial_number"] = ""
-
-    def release_station(self, station_id):
-        """Release a specific station."""
-        station_name = f'ST{station_id:02d}'
-        if station_name in self.station_states:
-            self.station_states[station_name]["status"] = "connected"  # Change to "connected" instead of "free"
-            self.station_states[station_name]["program_id"] = None
-            self.station_states[station_name]["serial_number"] = "" 

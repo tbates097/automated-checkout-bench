@@ -33,17 +33,9 @@ class Burn_In_Plotting():
         
         self.sample_rate = 1000
         # Track both started and completed axes
-        self.started_axes = test_axes.copy()  # All axes that started the test
-        self.available_axes, self.available_cycles = self.get_axes_and_cycles()  # Axes that completed
+        #self.started_axes = test_axes.copy()  # All axes that started the test
+        #self.available_axes, self.available_cycles = self.get_axes_and_cycles()  # Axes that completed
         
-        # Only create loggers for stations with completed axes
-        self.station_loggers = {}
-        for station in stations:
-            station_widget = self.secondary_ui.station_widgets.get(station)
-            axis_name = f'ST{station:02}'  # Convert station number to axis name
-            if station_widget and axis_name in self.available_axes:
-                self.station_loggers[station] = TextLogger(station_widget["txt_logs"])
-
         # Define a mapping between axis names and station IDs
         self.axis_to_station_map = {
             'ST01': 1,
@@ -58,6 +50,14 @@ class Burn_In_Plotting():
             'ST10': 10
             # Add more mappings as needed
         }
+
+        # Only create loggers for stations with completed axes
+        self.station_loggers = {}
+        for station in stations:
+            station_widget = self.secondary_ui.station_widgets.get(station)
+            axis_name = f'ST{station:02}'  # Convert station number to axis name
+            if station_widget and axis_name in self.test_axes:
+                self.station_loggers[station] = TextLogger(station_widget["txt_logs"])
 
     def station_print(self, message, station_id=None):
         """
@@ -103,16 +103,16 @@ class Burn_In_Plotting():
 
     def generate_plots(self):
         """Generate plots for completed axes, with notes about incomplete tests."""
-        incomplete_axes = set(self.started_axes) - set(self.available_axes)
-        if incomplete_axes:
-            for axis in incomplete_axes:
-                station_id = self.axis_to_station_map.get(axis)
-                self.station_print(
-                    f"Note: {axis} did not complete the burn-in test - no plots generated", 
-                    station_id=station_id
-                )
+        #incomplete_axes = set(self.started_axes) - set(self.available_axes)
+        #if incomplete_axes:
+        #    for axis in incomplete_axes:
+        #        station_id = self.axis_to_station_map.get(axis)
+                #self.station_print(
+                    #f"Note: {axis} did not complete the burn-in test - no plots generated", 
+                    #station_id=station_id
+                #)
         
-        for axis in self.available_axes:
+        for axis in self.test_axes:
             station_id = self.axis_to_station_map.get(axis)
             self.station_print(f"Generating plots for {axis}", station_id=station_id)
             
@@ -160,14 +160,14 @@ class Burn_In_Plotting():
             self.save_plot(fig, axis, "all_cycles")
             
             # Add note about incomplete test to plot if needed
-            if incomplete_axes:
-                fig.add_annotation(
-                    text=f"Note: Some axes did not complete the test: {list(incomplete_axes)}",
-                    xref="paper", yref="paper",
-                    x=0, y=1.1,
-                    showarrow=False,
-                    font=dict(color="red")
-                )
+            #if incomplete_axes:
+                #fig.add_annotation(
+                    #text=f"Note: Some axes did not complete the test: {list(incomplete_axes)}",
+                    #xref="paper", yref="paper",
+                    #x=0, y=1.1,
+                    #showarrow=False,
+                    #font=dict(color="red")
+                #)
         
         for axis in self.test_axes:
             station_id = self.axis_to_station_map.get(axis)    
@@ -240,16 +240,16 @@ class Burn_In_Plotting():
                 cells=dict(values=[results_text.split('<br>')], align='left')), row=2, col=1)
 
         # Add test completion status to comments
-        incomplete_axes = set(self.started_axes) - set(self.available_axes)
-        test_status = "Complete" if not incomplete_axes else f"Partial (Failed axes: {list(incomplete_axes)})"
+        #incomplete_axes = set(self.started_axes) - set(self.available_axes)
+        #test_status = "Complete" if not incomplete_axes else f"Partial (Failed axes: {list(incomplete_axes)})"
         
         comments = [
             ['Job Number', f'{str(self.job)}'],
             ['Stage', self.stage_type],
             ['Date', f'{self.current_date} {self.current_time}'],
             ['Operator', self.op],
-            ['Comments', self.comments],
-            ['Test Status', test_status]
+            ['Comments', self.comments]
+            #['Test Status', test_status]
         ]
         fig.add_trace(go.Table(
             header=dict(values=["Field", "Value"], align="left"),
