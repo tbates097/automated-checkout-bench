@@ -59,6 +59,7 @@ specs_dict = {}
 absolute = False
 allocated_stations = []
 previously_allocated_stations = set()
+part_entry = None
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -144,6 +145,7 @@ def get_station_controller(station):
 
 def launch_secondary_ui():
     """Launch the secondary UI in a new thread."""
+    global part_entry
     def run_secondary_ui():
         global secondary_ui
         secondary_ui = SecondaryUI()
@@ -151,22 +153,20 @@ def launch_secondary_ui():
 
     thread = threading.Thread(target=run_secondary_ui, daemon=True)
     thread.start()
+    
+    # Give the secondary UI time to launch, then refocus main window
+    window.after(500, lambda: (
+        window.lift(),
+        window.focus_force(),
+        part_entry.focus_set(),
+        part_entry.select_range(0, tk.END)
+    ))
 
 def UI():
-    global window, station_manager
+    global window, station_manager, part_entry
     window = tk.Tk()
     window.title("Check-out Station")
     
-    # Initialize StationManager
-    station_manager = StationManager(window)
-    set_station_manager(station_manager)
-    
-    # Load stored user inputs
-    stored_data = load_user_inputs()
-    
-    # Initialize Tkinter window
-    window.resizable(True, False)  # This code helps to disable windows from resizing
-
     # Get screen width and height, including taskbar
     screen_width = ctypes.windll.user32.GetSystemMetrics(0)  # Full screen width
     screen_height = ctypes.windll.user32.GetSystemMetrics(1)  # Full screen height
@@ -183,13 +183,80 @@ def UI():
     window_width = min(window_width, usable_width)
     window_height = min(window_height, usable_height)
     
+    # Get information about all screens
+    def get_screen_info():
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            monitors = []
+            
+            def callback(hMonitor, hdcMonitor, lprect, dwData):
+                rect = ctypes.cast(lprect, ctypes.POINTER(ctypes.c_long))
+                monitor_info = {
+                    'x': rect[0],
+                    'y': rect[1],
+                    'width': rect[2] - rect[0],
+                    'height': rect[3] - rect[1]
+                }
+                monitors.append(monitor_info)
+                return True
+            
+            callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, 
+                                             ctypes.c_ulong, 
+                                             ctypes.c_ulong,
+                                             ctypes.POINTER(ctypes.c_long), 
+                                             ctypes.c_ulong)
+            callback_function = callback_type(callback)
+            user32.EnumDisplayMonitors(None, None, callback_function, 0)
+            
+            # Try finding leftmost and rightmost based on physical layout
+            leftmost = min(monitors, key=lambda m: m['x'])
+            rightmost = max(monitors, key=lambda m: m['x'])
+            
+            return monitors
+        except Exception as e:
+            print(f"Error getting screen info: {e}")
+            return None
+
     # Center the window on the screen
-    x_cordinate = 0
+    x_cordinate = 0  # We can keep these variables if needed elsewhere
     y_cordinate = 0
     
-    # Set window size and position
-    window.geometry(f"{window_width}x{window_height}+{x_cordinate}+{y_cordinate}")
+    # Comment out or remove this line since it's overriding our rightmost monitor positioning
+    # window.geometry(f"{window_width}x{window_height}+{x_cordinate}+{y_cordinate}")
     
+    # Position window on rightmost screen
+    screens = get_screen_info()
+    if screens:
+        rightmost_screen = max(screens, key=lambda m: m['x'])
+        x = rightmost_screen['x'] + (rightmost_screen['width'] - window_width) // 2
+        
+        # Adjust y position to be higher up
+        taskbar_offset = 50  # Adjust this value to move window up more or less
+        y = rightmost_screen['y'] + (rightmost_screen['height'] - window_height) // 2 - taskbar_offset
+        
+        window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # Force window to be active and focused
+        window.lift()
+        window.attributes('-topmost', True)
+        window.update()
+        window.attributes('-topmost', False)
+        window.focus_force()
+        
+        # Now set focus to part number entry
+        window.after(100, lambda: (part_entry.focus_set(), part_entry.select_range(0, tk.END)))
+    
+    # Initialize StationManager
+    station_manager = StationManager(window)
+    set_station_manager(station_manager)
+    
+    # Load stored user inputs
+    stored_data = load_user_inputs()
+    
+    # Initialize Tkinter window
+    window.resizable(True, False)  # This code helps to disable windows from resizing
+
     window.grid_rowconfigure(0, weight=1)
     window.grid_rowconfigure(1, weight=1)
     window.grid_columnconfigure(0, weight=1)
@@ -270,8 +337,6 @@ def UI():
     
     sys.stdout = text_logger
     
-    launch_secondary_ui()
-    
     def start_test_thread():
         global allocated_stations
         """Start a test thread for the required number of stations."""
@@ -349,7 +414,11 @@ def UI():
                     try:
                         if allocated_stations:  # Only try to release if we have stations
                             station_manager.release_stations(allocated_stations)
-                            previously_allocated_stations.remove(allocated_stations)
+                            # Remove each individual station number from previously_allocated_stations
+                            for station in allocated_stations:
+                                station_num = int(station[2:])  # Convert 'ST01' to 1
+                                if station_num in previously_allocated_stations:
+                                    previously_allocated_stations.remove(station_num)
                     except ValueError as e:
                         print(f"Station Release Error (likely already released): {str(e)}")
                     except Exception as e:
@@ -357,7 +426,6 @@ def UI():
                     secondary_ui.update_station_status(new_stations, running=False, serial="")
                     available_stations = station_manager.get_available_stations()
                     print(f"Stations {new_stations} are now free.")
-                    print(f"Available Stations: {available_stations}")
                     window.after(0, lambda: btn_run.config(state=tk.NORMAL))
 
             # Disable run button during test
@@ -437,6 +505,15 @@ def UI():
                 test_axes, duty_cycle, specs_dict, 
                 absolute, stations
             )
+
+            # Register abort callbacks for each station
+            for axis in test_axes:
+                station_id = int(axis[2:])  # Convert 'ST01' to 1
+                stage_test.secondary_ui.register_abort_callback(
+                    station_id, 
+                    lambda axis=axis: stage_test.abort_test(axis)
+                )
+
             #print(f'Station Controllers-test: {station_controllers}')
             stage_test.test(reenable_run_button, initialized_controllers)  
 
@@ -529,7 +606,7 @@ def UI():
     part_entry = tk.Entry(input_frame, textvariable=part_number, width=25)
     part_entry.grid(row=input_frame.ID_row, column=1, columnspan=2, padx=5, pady=5)
     part_entry.bind("<FocusIn>", on_entry_focus)
-    part_entry.focus()
+    part_entry.focus()  # Set focus to the part number field when window opens
 
     scan_button = tk.Button(input_frame, text="Retrieve Stage Options", width=20, height=1, font=button_font, background="lightgray", command=on_scan)
     scan_button.grid(row=input_frame.config_button_row, column=1, columnspan=2, padx=5, pady=5)
@@ -635,7 +712,7 @@ def UI():
     
     # Bind the closing protocol
     window.protocol("WM_DELETE_WINDOW", on_closing)
-
+    launch_secondary_ui()
     window.mainloop()
     
 if __name__ == "__main__":

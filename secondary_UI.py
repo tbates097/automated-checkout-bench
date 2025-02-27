@@ -14,6 +14,7 @@ class SecondaryUI:
         self.station_widgets = {}  # Store widgets for each station
         self.station_loggers = {}  # Add this to store loggers
         self.lock = threading.Lock()  # Ensure thread-safe updates
+        self.abort_callbacks = {}  # Store abort callbacks for each station
 
         # Configure grid layout for consistent frame scaling
         for row in range(2):  # 2 rows
@@ -94,8 +95,23 @@ class SecondaryUI:
                 font=("Arial", 10),
                 wrap="word",
                 state="disabled",
+                height=10  # Set a reasonable height
             )
             txt_logs.pack(expand=True, fill="both", padx=5, pady=5)
+
+            # Add Abort button (after the logs text widget)
+            btn_abort = tk.Button(
+                frame,
+                text="Abort Test",
+                fg="white",
+                bg="#cc0000",  # Red background
+                font=("Arial", 10, "bold"),
+                command=lambda station=i: self.trigger_abort(station),
+                state="disabled",  # Initially disabled
+                width=15,  # Set a fixed width
+                height=1   # Set a fixed height
+            )
+            btn_abort.pack(fill=tk.X, padx=5, pady=(5, 10))
 
             # Create logger for this station if it doesn't exist
             if i not in self.station_loggers:
@@ -108,8 +124,18 @@ class SecondaryUI:
                 "indicator": indicator,
                 "entry_serial": entry_serial,
                 "txt_logs": txt_logs,
-                "logger": self.station_loggers[i]  # Store reference to logger
+                "logger": self.station_loggers[i],
+                "btn_abort": btn_abort  # Add abort button to widgets
             }
+
+    def register_abort_callback(self, station, callback):
+        """Register a callback function for when abort is clicked"""
+        self.abort_callbacks[station] = callback
+
+    def trigger_abort(self, station):
+        """Trigger the abort callback for a station"""
+        if station in self.abort_callbacks:
+            self.abort_callbacks[station]()
 
     def update_station_status(self, stations, running=False, serial=None):
         """
@@ -131,6 +157,9 @@ class SecondaryUI:
                     # Update indicator color
                     color = "green" if running else "red"
                     widget["indicator"].config(bg=color)
+                    
+                    # Enable/disable abort button based on running status
+                    widget["btn_abort"].config(state="normal" if running else "disabled")
 
                     # Update serial number
                     if serial is not None:

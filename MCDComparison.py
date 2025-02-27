@@ -7,9 +7,10 @@ import tkinter as tk
 from tkinter import filedialog
 
 class MCDComparison():
-    def __init__(self, part_number, controller):
+    def __init__(self, part_number, controller, window):
         self.part_number = part_number
         self.controller = controller
+        self.window = window
 
     def extract_mcd(self,mcd_path, extract_path):
         """Extracts the contents of an .MCD file to a specified directory."""
@@ -52,7 +53,6 @@ class MCDComparison():
         if len(files_in_path1) == 1:
             file_1 = os.path.join(path_1, files_in_path1[0])
         else:
-            #print(f"Expected 1 file in {path_1}, found {len(files_in_path1)}")
             return None, None
         file_2 = os.path.join(path_2, f'{self.part_number}.mcd')
         file_paths = [file_1, file_2]
@@ -99,13 +99,17 @@ class MCDComparison():
         
         # Show dialog for missing parameters
         if missing_params:
-            root = tk.Tk()
-            root.withdraw()
-            dialog = ParameterDialog(root, missing_params, "Current Config", "New Config")
-            root.wait_window(dialog)
-            
-            if dialog.result:
-                comparison_results.update(dialog.result)
+            if self.window:
+                # Use the main window as parent if available
+                dialog = ParameterDialog(self.window, missing_params, "Current Config", "New Config")
+                self.window.wait_window(dialog)
+            else:
+                # Fall back to creating a new root window
+                root = tk.Tk()
+                root.withdraw()
+                dialog = ParameterDialog(root, missing_params, "Current Config", "New Config")
+                root.wait_window(dialog)
+                root.destroy()
 
         # Add different parameters
         for param, value2 in params2.items():
@@ -143,6 +147,46 @@ class ParameterDialog(tk.Toplevel):
     def __init__(self, parent, missing_params, file1_name, file2_name):
         super().__init__(parent)
         self.title("Missing Parameters")
+        
+        # Get information about all screens
+        def get_screen_info():
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                monitors = []
+                
+                def callback(hMonitor, hdcMonitor, lprect, dwData):
+                    rect = ctypes.cast(lprect, ctypes.POINTER(ctypes.c_long))
+                    monitors.append({
+                        'x': rect[0],
+                        'y': rect[1],
+                        'width': rect[2] - rect[0],
+                        'height': rect[3] - rect[1]
+                    })
+                    return True
+                
+                callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, 
+                                                 ctypes.c_ulong, 
+                                                 ctypes.c_ulong,
+                                                 ctypes.POINTER(ctypes.c_long), 
+                                                 ctypes.c_ulong)
+                callback_function = callback_type(callback)
+                user32.EnumDisplayMonitors(None, None, callback_function, 0)
+                return monitors
+            except:
+                return None
+
+        # Position window on rightmost screen
+        screens = get_screen_info()
+        if screens:
+            rightmost_screen = max(screens, key=lambda m: m['x'])
+            
+            # Calculate center position on rightmost monitor
+            x = rightmost_screen['x'] + 100  # Offset from left edge of rightmost monitor
+            y = rightmost_screen['y'] + 100  # Offset from top edge of rightmost monitor
+            
+            self.geometry(f"+{x}+{y}")
+        
         self.modified_params = {}
         
         # Create main frame
@@ -201,4 +245,3 @@ class ParameterDialog(tk.Toplevel):
     def cancel(self):
         self.result = None
         self.destroy()
-

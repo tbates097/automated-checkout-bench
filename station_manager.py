@@ -129,7 +129,6 @@ class StationManager:
 
     def release_stations(self, station):
         """Release a station back to available pool"""
-        print(f"Releasing station: {station}")
         if isinstance(station, list):
             # If a list is passed, release each station in the list
             for single_station in station:

@@ -24,6 +24,11 @@ sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults
 
+class TestSequenceAbort(Exception):
+    def __init__(self, message, shown_message=False):
+        super().__init__(message)
+        self.shown_message = shown_message
+
 class burn_in():
     def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file):
         #self.stage_type = stage_type
@@ -78,6 +83,16 @@ class burn_in():
 
         self.cycle_log_position = None  # Add this line
         self.station_manager = get_station_manager()
+        
+        # Register abort callbacks for each station
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map[axis]
+            self.secondary_ui.register_abort_callback(
+                station_id, 
+                lambda axis=axis: self.abort_burnin(axis)
+            )
+        
+        self.aborted_stations = []
         
     def station_print(self, message, station_id=None, overwrite=False):
         """Print a message to specific station(s) text_widget or all stations."""
@@ -134,33 +149,35 @@ class burn_in():
         
         self.list_commands = []
         self.list_velocity = []
-        
-        for axis in self.test_axes:
-            self.list_commands.append(self.get_spec_value('NominalTravel') / 2)
-            self.list_velocity.append(self.speed)
         try:
-            self.movetostart()
-            time.sleep(2)
-        except TestSequenceAbort as e:
-            messagebox.showerror("Test Sequence Aborted", str(e))
-            self.station_print(f"Test sequence aborted: {str(e)}")
-        try:
-            self.increase_speed()
-            time.sleep(2)
-        except TestSequenceAbort as e:
-            messagebox.showerror("Test Sequence Aborted", str(e))
-            self.station_print(f"Test sequence aborted: {str(e)}")
-        try:
-            self.four_hour_burnin()
-        
-            plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations, self.test_axes)
-            plot.generate_plots() 
+            for axis in self.test_axes:
+                self.list_commands.append(self.get_spec_value('NominalTravel') / 2)
+                self.list_velocity.append(self.speed)
+            try:
+                self.movetostart()
+                time.sleep(2)
+            except TestSequenceAbort as e:
+                raise
+            try:
+                self.increase_speed()
+                time.sleep(2)
+            except TestSequenceAbort as e:
+                raise
+            try:
+                self.four_hour_burnin()
+                time.sleep(2)
+            except TestSequenceAbort as e:
+                raise
+            try:
+                plot = Burn_In_Plotting(self.axis_data, self.stage_type, self.burnin_time, self.job, self.op, self.comments, self.folder, self.secondary_ui, self.specs_dict, self.stations, self.test_axes)
+                plot.generate_plots() 
 
-            messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')
-
-        except TestSequenceAbort as e:
-            messagebox.showerror("Test Sequence Aborted", str(e))
-            self.station_print(f"Test sequence aborted: {str(e)}")
+                messagebox.showinfo('Burn-In Complete', f'Burn-in complete on {self.current_date} at {self.current_time}')
+            except TestSequenceAbort as e:
+                raise
+        except Exception as e:
+            self.station_print(f"Burn-In Aborted: {str(e)}")
+            messagebox.showerror("Burn-In Aborted", str(e))
         finally:
             self.perform_burnin_cleanup()
 
@@ -168,6 +185,10 @@ class burn_in():
         """Move all axes to their starting positions in parallel."""
         threads = []
         def move_axis(axis):
+            station_id = self.axis_to_station_map.get(axis)
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+                
             controller = self.station_controllers[axis]
             try:
                 controller.runtime.commands.motion.moveabsolute(
@@ -181,45 +202,66 @@ class burn_in():
                 if faults_per_axis:
                     controller.runtime.commands.fault_and_error.acknowledgeall(1)
                 time.sleep(2)
+            except TestSequenceAbort as e:
+                return
         
-        # Start all axis moves in parallel
-        for axis in self.test_axes:
-            thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for all moves to complete
-        for thread in threads:
-            thread.join()
-        time.sleep(2)
-        
+        try:
+            # Start all axis moves in parallel
+            for axis in self.test_axes:
+                thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
+                threads.append(thread)
+                thread.start()
+            
+            # Wait for all moves to complete
+            for thread in threads:
+                thread.join()
+            time.sleep(2)
+        except TestSequenceAbort as e:
+            # Clean up any remaining axes
+            for axis in list(self.test_axes):
+                try:
+                    controller = self.station_controllers[axis]
+                    controller.runtime.commands.motion.abort([axis])
+                    controller.runtime.commands.motion.disable([axis])
+                except:
+                    pass
+            raise  # Re-raise to stop the test sequence
+
     def increase_speed(self):
         speed_increment = float(self.speed/5)      
         list_speed = [i-i for i in self.list_velocity]
         count = 1
         
-        while count <= 5:
-            try:
-                list_speed = [i+speed_increment for i in list_speed]
-                cycle_time = self.nominal_travel / list_speed[0]
+        try:
+            while count <= 5:
+                # Check for aborted stations at start of each cycle
+                for axis in self.test_axes:
+                    station_id = self.axis_to_station_map[axis]
+                    if station_id in self.aborted_stations:
+                        raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                 
-                dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
-                
-                self.forward_move(dwell, list_speed)
-                    
-                count += 1
-                if count < 5:
+                try:
                     list_speed = [i+speed_increment for i in list_speed]
                     cycle_time = self.nominal_travel / list_speed[0]
                     
                     dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
-                
-                self.reverse_move(dwell, list_speed)
-                
-                count += 1
-            except TestSequenceAbort as e:
-                return
-            
+                    
+                    self.forward_move(dwell, list_speed)
+                        
+                    count += 1
+                    if count < 5:
+                        list_speed = [i+speed_increment for i in list_speed]
+                        cycle_time = self.nominal_travel / list_speed[0]
+                        
+                        dwell = self.calculate_dwell_time(cycle_time, self.duty_cycle)
+                    
+                    self.reverse_move(dwell, list_speed)
+                    
+                    count += 1
+                except TestSequenceAbort as e:
+                    return
+        except TestSequenceAbort as e:
+            raise
         time.sleep(1)
         
     def round_to_nearest(self, value, multiple):
@@ -264,11 +306,6 @@ class burn_in():
             thread = self.create_tracked_thread(target=collect_axis_data, axis=axis, args=(axis,))
             threads.append(thread)
             thread.start()
-
-        # Execute moves in separate thread (no axis needed as it's just coordinating)
-        #move_thread = self.create_tracked_thread(target=execute_moves, args=())
-        #threads.append(move_thread)
-        #move_thread.start()
         
         # Wait for all threads to complete
         for thread in threads:
@@ -294,32 +331,44 @@ class burn_in():
         
         cycle = 1
         
-        while cycle <= self.cycles:
-            try:
-                self.current_date = datetime.date.today()
-                self.current_time = datetime.datetime.now().time()
+        try:
+            while cycle <= self.cycles:
+                # Check for aborted stations at start of each cycle
+                for axis in self.test_axes:
+                    station_id = self.axis_to_station_map[axis]
+                    if station_id in self.aborted_stations:
+                        raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                 
-                # Log cycle progress
-                self._log_cycle_progress(cycle)
-                
-                # Collect data at intervals or first cycle
-                if cycle == 1 or cycle % data_interval == 0:
-                    self.burn_in_data(cycle)
+                try:
+                    self.current_date = datetime.date.today()
+                    self.current_time = datetime.datetime.now().time()
+                    
+                    # Log cycle progress
+                    self._log_cycle_progress(cycle)
+                    
+                    # Collect data at intervals or first cycle
+                    if cycle == 1 or cycle % data_interval == 0:
+                        self.burn_in_data(cycle)
+                        cycle += 2
+                    else:
+                        # Execute moves without data collection
+                        self.forward_move(self.dwell, self.list_velocity)
+                        self.reverse_move(self.dwell, self.list_velocity)
+                    
                     cycle += 2
-                else:
-                    # Execute moves without data collection
-                    self.forward_move(self.dwell, self.list_velocity)
-                    self.reverse_move(self.dwell, self.list_velocity)
-                
-                cycle += 2
-            except TestSequenceAbort as e:
-                return
+                except TestSequenceAbort as e:
+                    return
+        except TestSequenceAbort as e:
+            raise
 
     def forward_move(self, dwell, speed):
         """Execute forward move for all axes."""
-        # Move each axis in parallel
         threads = []
         def move_axis(axis):
+            station_id = self.axis_to_station_map[axis]
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+                
             controller = self.station_controllers[axis]
             try:
                 controller.runtime.commands.motion.moveabsolute(
@@ -332,7 +381,13 @@ class burn_in():
                 if faults_per_axis:
                     self.handle_faults(faults_per_axis)
                     raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-        
+            except TestSequenceAbort as e:
+                return
+            
+            # Check again before waiting
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+            
             time.sleep(dwell)
             
             try:
@@ -342,7 +397,9 @@ class burn_in():
                 if faults_per_axis:
                     self.handle_faults(faults_per_axis)
                     raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-        
+            except TestSequenceAbort as e:
+                return
+
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
             threads.append(thread)
@@ -354,9 +411,12 @@ class burn_in():
 
     def reverse_move(self, dwell, speed):
         """Execute reverse move for all axes."""
-        # Move each axis in parallel
         threads = []
         def move_axis(axis):
+            station_id = self.axis_to_station_map[axis]
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+                
             controller = self.station_controllers[axis]
             try:
                 controller.runtime.commands.motion.moveabsolute(
@@ -369,7 +429,13 @@ class burn_in():
                 if faults_per_axis:
                     self.handle_faults(faults_per_axis)
                     raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
+            except TestSequenceAbort as e:
+                return
         
+            # Check again before waiting
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+            
             time.sleep(dwell)
             
             try:
@@ -379,7 +445,9 @@ class burn_in():
                 if faults_per_axis:
                     self.handle_faults(faults_per_axis)
                     raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-        
+            except TestSequenceAbort as e:
+                return
+
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
             threads.append(thread)
@@ -613,33 +681,14 @@ class burn_in():
                         self.fault_log.error(f"Cleanup error for station {station_id}: {str(cleanup_error)}")
             except Exception as e:
                 self.fault_log.error(f"Error during cleanup for axis {axis}: {str(e)}")
-# =============================================================================
-#     def init_logger(self):
-#         # Create the root directory for logs if it doesn't exist
-#         base_log_dir = r"O:\Strut Checkout"
-#         os.makedirs(base_log_dir, exist_ok=True)
-#         
-#         # Create a subdirectory for the current job using self.job
-#         job_log_dir = os.path.join(base_log_dir, self.job)
-#         os.makedirs(job_log_dir, exist_ok=True)
-#         
-#         # Configure the first log file for fault logging
-#         fault_log_file = os.path.join(job_log_dir, f'Strut Checkout Station Fault Log {self.job}.log')
-#         self.fault_log = logging.getLogger('fault_log')
-#         fault_handler = logging.FileHandler(fault_log_file)
-#         fault_handler.setLevel(logging.INFO)
-#         fault_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-#         fault_handler.setFormatter(fault_formatter)
-#         self.fault_log.addHandler(fault_handler)
-#         self.fault_log.setLevel(logging.INFO)
-#         
-#         # Configure the second log file for limit information logging
-#         limit_log_file = os.path.join(job_log_dir, f'{self.job} Limit Info.log')
-#         self.stage_info = logging.getLogger('limit_info')
-#         limit_handler = logging.FileHandler(limit_log_file)
-#         limit_handler.setLevel(logging.INFO)
-#         limit_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-#         limit_handler.setFormatter(limit_formatter)
-#         self.stage_info.addHandler(limit_handler)
-#         self.stage_info.setLevel(logging.INFO)
-# =============================================================================
+
+    def abort_burnin(self, axis):
+        """Abort the burn-in process for a specific axis"""
+        station_id = self.axis_to_station_map[axis]
+        self.station_print("DEBUG: Abort button clicked", station_id=station_id)
+        
+        if messagebox.askyesno("Confirm Abort", f"Are you sure you want to abort the burn-in for {axis}?"):
+            self.station_print("DEBUG: Abort confirmed", station_id=station_id)
+            self.aborted_stations.append(station_id)  # Add station to aborted list
+        else:
+            self.station_print("DEBUG: Abort cancelled", station_id=station_id)
