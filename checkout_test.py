@@ -538,6 +538,9 @@ class stage_checkout():
                         print(f'Data To Sheet: {self.data}')
                         populate_sheet = Sheets(self.job, self.data)
                         populate_sheet.populate_sheet()
+                    except TestSequenceAbort:
+                        raise
+                    try:
                         time.sleep(5)
                         self.home_stages()
                     except TestSequenceAbort:
@@ -1985,7 +1988,7 @@ class stage_checkout():
         os.makedirs(self.job_log_dir, exist_ok=True)
 
         # Configure the first log file for fault logging
-        fault_log_file = os.path.join(base_log_dir, f'Strut Checkout Station Fault Log.log')
+        fault_log_file = os.path.join(base_log_dir, f'Checkout Station Fault Log.log')
         self.fault_log = logging.getLogger('fault_log')
         fault_handler = logging.FileHandler(fault_log_file)
         fault_handler.setLevel(logging.INFO)
@@ -1995,7 +1998,7 @@ class stage_checkout():
         self.fault_log.setLevel(logging.INFO)
 
         # Configure the second log file for limit information logging
-        self.stage_log_file = os.path.join(base_log_dir, f'Strut Checkout Station.log')
+        self.stage_log_file = os.path.join(base_log_dir, f'Checkout Station.log')
         self.stage_info = logging.getLogger('stage_info')
         stage_handler = logging.FileHandler(self.stage_log_file)
         stage_handler.setLevel(logging.INFO)

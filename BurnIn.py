@@ -82,7 +82,6 @@ class burn_in():
         self.window.withdraw()
 
         self.cycle_log_position = None  # Add this line
-        self.station_manager = get_station_manager()
         
         # Register abort callbacks for each station
         for axis in self.test_axes:
@@ -327,7 +326,11 @@ class burn_in():
         # Calculate total cycles and data collection intervals
         total_seconds = self.burnin_time * 3600
         self.cycles = self.round_to_nearest(total_seconds / self.total_time, 100)
-        data_interval = self.round_to_nearest(1800 / self.total_time, 1)  # Data every 30 minutes
+        # Calculate data interval in cycles (30 minutes worth of cycles)
+        base_interval = max(1, int(self.round_to_nearest(1800 / self.total_time, 2)))
+        # Ensure data_interval is odd to match our odd-numbered cycles
+        data_interval = base_interval + (1 if base_interval % 2 == 0 else 0)
+        self.stage_info.info(f'Data collection interval set to every {data_interval} cycles')
         
         cycle = 1
         
@@ -347,14 +350,16 @@ class burn_in():
                     self._log_cycle_progress(cycle)
                     
                     # Collect data at intervals or first cycle
-                    if cycle == 1 or cycle % data_interval == 0:
+                    should_collect = cycle == 1 or cycle % data_interval == 0
+                    if should_collect:
+                        self.stage_info.info(f"Collecting data for cycle {cycle}")
                         self.burn_in_data(cycle)
-                        cycle += 2
                     else:
                         # Execute moves without data collection
                         self.forward_move(self.dwell, self.list_velocity)
                         self.reverse_move(self.dwell, self.list_velocity)
                     
+                    # Always increment by 2 after completing the cycle
                     cycle += 2
                 except TestSequenceAbort as e:
                     return
@@ -577,10 +582,9 @@ class burn_in():
         station_id = self.axis_to_station_map[axis]  # Get station directly from the map
         
         if station_id:
-            station_manager = get_station_manager()
-            self.stage_info.info(f"Releasing station {station_id}")
-            station_manager.release_station(station_id)
-            station_manager.refresh_station_status()
+            #station_manager = get_station_manager()
+            #station_manager.release_stations(station_id)
+            #station_manager.refresh_station_status()
             self.secondary_ui.update_station_status(station_id, running=False, serial="")
             controller = self.station_controllers[axis]
             controller.runtime.commands.motion.disable([axis])
@@ -650,7 +654,6 @@ class burn_in():
         Perform cleanup operations after burn-in completion or abort.
         """
         current_thread = threading.current_thread()
-        station_manager = get_station_manager()
 
         # Clean up each station/axis that was being tested
         for axis in list(self.test_axes):  # Create a copy of list since we'll modify it
@@ -670,8 +673,9 @@ class burn_in():
                         
                         # Update UI and release station only for stations in this test
                         self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        station_manager.release_station(station_id)
-                        station_manager.refresh_station_status()
+                        #station_manager = get_station_manager()
+                        #station_manager.release_stations(station_id)
+                        #station_manager.refresh_station_status()
                         
                         # Do data structure cleanup last
                         self.cleanup_data_structures(station_id, axis)
@@ -685,10 +689,8 @@ class burn_in():
     def abort_burnin(self, axis):
         """Abort the burn-in process for a specific axis"""
         station_id = self.axis_to_station_map[axis]
-        self.station_print("DEBUG: Abort button clicked", station_id=station_id)
         
         if messagebox.askyesno("Confirm Abort", f"Are you sure you want to abort the burn-in for {axis}?"):
-            self.station_print("DEBUG: Abort confirmed", station_id=station_id)
             self.aborted_stations.append(station_id)  # Add station to aborted list
         else:
-            self.station_print("DEBUG: Abort cancelled", station_id=station_id)
+            return
