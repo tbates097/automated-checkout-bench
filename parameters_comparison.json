@@ -1,0 +1,19 @@
+{
+    "0": {
+        "CountsPerUnit": "32888.88888888889",
+        "CurrentLoopFeedforwardGainLff": "0.45",
+        "CurrentLoopFeedforwardGainRff": "4.8",
+        "FeedforwardFilter00CoeffD1": "-1.564504",
+        "FeedforwardFilter00CoeffD2": "0.64366233",
+        "FeedforwardGainAff": "0.000597",
+        "FeedforwardGainNormalizationFactor": "188439.4526208041",
+        "LimitDecelDistance": "10.8",
+        "MaxCurrentClamp": "5",
+        "ServoLoopFilter00CoeffN0": "0.019789578",
+        "ServoLoopFilter00CoeffN1": "0.039579157",
+        "ServoLoopFilter00CoeffN2": "0.019789578",
+        "ServoLoopGainKip": "8.97",
+        "ServoLoopGainKiv": "17.9",
+        "ServoLoopGainNormalizationFactor": "188439.4526208041"
+    }
+}

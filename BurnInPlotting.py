@@ -12,7 +12,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import datetime
 
-sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
@@ -32,15 +32,11 @@ class Burn_In_Plotting():
         self.test_axes = test_axes 
         
         self.sample_rate = 1000
-        # Extract available axes and cycles from the data
-        self.available_axes, self.available_cycles = self.get_axes_and_cycles()
+        # Track both started and completed axes
+        self.started_axes = test_axes.copy()  # All axes that started the test
+        self.available_axes = []
+        self.available_cycles = []
         
-        self.station_loggers = {}
-        for station_id in self.stations:
-            station_widget = self.secondary_ui.station_widgets.get(station_id)
-            if station_widget:
-                self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"])
-
         # Define a mapping between axis names and station IDs
         self.axis_to_station_map = {
             'ST01': 1,
@@ -56,6 +52,22 @@ class Burn_In_Plotting():
             # Add more mappings as needed
         }
 
+        # Initialize station loggers with error checking
+        self.station_loggers = {}
+        try:
+            if hasattr(self.secondary_ui, 'station_widgets'):
+                for axis in self.test_axes:
+                    station_id = self.axis_to_station_map.get(axis)
+                    if station_id:
+                        station_widget = self.secondary_ui.station_widgets.get(station_id)
+                        if station_widget and "txt_logs" in station_widget:
+                            self.station_loggers[station_id] = TextLogger(station_widget["txt_logs"], clear_existing=False)
+        except Exception as e:
+            print(f"Warning: Could not initialize station loggers: {e}")
+            # Initialize a default logger that prints to console
+            self.station_loggers = {station_id: print for station_id in range(1, 11)}
+
+        self.available_axes, self.available_cycles = self.get_axes_and_cycles()  # Axes that completed
     def station_print(self, message, station_id=None):
         """
         Print a message to a specific station's text_widget or all stations.
@@ -82,27 +94,38 @@ class Burn_In_Plotting():
 
     def get_axes_and_cycles(self):
         """
-        Get the available axes and cycles from the axis_data.
-
+        Get the available axes and cycles from the axis_data, handling missing axes.
+        
         Returns:
-            tuple: (list of axes, list of cycles)
+            tuple: (list of axes that completed the test, list of cycles)
         """
-        axes = set()
-        cycles = list(self.axis_data.keys())
-
-        # Collect all unique axes across cycles
-        for cycle_data in self.axis_data.values():
-            axes.update(cycle_data.keys())
-
-        return list(axes), cycles
+        completed_axes = set()
+        cycles = sorted(self.axis_data.keys())  # Sort cycles for consistent ordering
+        
+        # Find axes that have data in the final cycle
+        final_cycle = cycles[-1] if cycles else None
+        if final_cycle:
+            completed_axes.update(self.axis_data[final_cycle].keys())
+        
+        self.station_print(f"Completed axes: {list(completed_axes)}")
+        return list(completed_axes), cycles
 
     def generate_plots(self):
-        """
-        Automatically generate both individual plots for each axis and cycle,
-        overlaid plots for each axis with all cycles, and FFT plots of current feedback.
-        """
-        for axis in self.available_axes:
-            # Generate separate plots for each axis-cycle combination
+        """Generate plots for completed axes, with notes about incomplete tests."""
+        incomplete_axes = set(self.started_axes) - set(self.available_axes)
+        if incomplete_axes:
+            for axis in incomplete_axes:
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(
+                    f"Note: {axis} did not complete the burn-in test - no plots generated", 
+                    station_id=station_id
+                )
+        
+        for axis in self.test_axes:
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f"Generating plots for {axis}", station_id=station_id)
+            
+            # Generate plots for completed axes
             for cycle in self.available_cycles:
                 if axis in self.axis_data[cycle]:
                     # Regular Plot of CurrentFeedback vs PositionFeedback
@@ -117,7 +140,7 @@ class Burn_In_Plotting():
                     ))
                     self.add_info_tables(fig, axis, cycle)
                     self.save_plot(fig, axis, cycle)
-    
+        
                     # FFT Plot of CurrentFeedback
                     fft_fig = self.create_subplot(axis, cycle, is_fft=True)
                     fft_freqs, self.fft_magnitude = self.calculate_fft(current_feedback)
@@ -129,7 +152,7 @@ class Burn_In_Plotting():
                     ))
                     self.add_info_tables(fft_fig, axis, cycle, is_fft=True)
                     self.save_plot(fft_fig, axis, f'{cycle}_FFT')
-    
+        
             # Generate an overlaid plot for all cycles for the current axis
             fig = self.create_subplot(axis, "all_cycles")
             for cycle in self.available_cycles:
@@ -144,6 +167,17 @@ class Burn_In_Plotting():
                     ))
             self.add_info_tables(fig, axis, "all_cycles")
             self.save_plot(fig, axis, "all_cycles")
+            
+            # Add note about incomplete test to plot if needed
+            if incomplete_axes:
+                fig.add_annotation(
+                    text=f"Note: Some axes did not complete the test: {list(incomplete_axes)}",
+                    xref="paper", yref="paper",
+                    x=0, y=1.1,
+                    showarrow=False,
+                    font=dict(color="red")
+                )
+        
         for axis in self.test_axes:
             station_id = self.axis_to_station_map.get(axis)    
             self.station_print(f"Plots saved in: {self.plot_folder}", station_id=station_id)
@@ -214,13 +248,17 @@ class Burn_In_Plotting():
                 header=dict(values=["Results"], align='left'),
                 cells=dict(values=[results_text.split('<br>')], align='left')), row=2, col=1)
 
-        # Comments Table
+        # Add test completion status to comments
+        incomplete_axes = set(self.started_axes) - set(self.available_axes)
+        test_status = "Complete" if not incomplete_axes else f"Partial (Failed axes: {list(incomplete_axes)})"
+        
         comments = [
             ['Job Number', f'{str(self.job)}'],
             ['Stage', self.stage_type],
             ['Date', f'{self.current_date} {self.current_time}'],
             ['Operator', self.op],
-            ['Comments', self.comments]
+            ['Comments', self.comments],
+            ['Test Status', test_status]
         ]
         fig.add_trace(go.Table(
             header=dict(values=["Field", "Value"], align="left"),
