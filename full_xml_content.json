@@ -1,0 +1,2394 @@
+{
+  "file1": {
+    "path": "C:/Users/tbates/Python/MCD Comparison/MCD/PRO165LM.mcd",
+    "content": {
+      "@attributes": {
+        "SchemaVersion": "1.0.0.0"
+      },
+      "FileInformation": {
+        "SoftwareVersion": {
+          "@text": "2.9.2.2978"
+        },
+        "OldestCompatibleSoftwareVersion": {
+          "@text": "1.0.0.0"
+        }
+      },
+      "Data": {
+        "Parameters": {
+          "System": {
+            "P": [
+              {
+                "@attributes": {
+                  "id": "93",
+                  "n": "GlobalReals"
+                },
+                "@text": "104"
+              },
+              {
+                "@attributes": {
+                  "id": "173",
+                  "n": "GlobalStrings"
+                },
+                "@text": "32"
+              }
+            ]
+          },
+          "Axes": {
+            "Axis": [
+              {
+                "@attributes": {
+                  "Index": "0"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "67",
+                      "n": "AbortDecelRate"
+                    },
+                    "@text": "1100"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "29",
+                      "n": "AverageCurrentThreshold"
+                    },
+                    "@text": "4.197731"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "ST02"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "532",
+                      "n": "BusOvervoltageThreshold"
+                    },
+                    "@text": "400"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "50000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "540",
+                      "n": "CurrentLoopFeedforwardBackEmf"
+                    },
+                    "@text": "21.28"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "541",
+                      "n": "CurrentLoopFeedforwardBusVoltage"
+                    },
+                    "@text": "160"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "539",
+                      "n": "CurrentLoopFeedforwardGainLff"
+                    },
+                    "@text": "1.33"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "538",
+                      "n": "CurrentLoopFeedforwardGainRff"
+                    },
+                    "@text": "4.8"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "21",
+                      "n": "CurrentLoopGainK"
+                    },
+                    "@text": "590"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "20",
+                      "n": "CurrentLoopGainKi"
+                    },
+                    "@text": "3200"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "398",
+                      "n": "CurrentLoopSetup"
+                    },
+                    "@text": "32"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "66",
+                      "n": "DefaultAxisRampRate"
+                    },
+                    "@text": "1000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "65",
+                      "n": "DefaultAxisSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "55",
+                      "n": "EndOfTravelLimitSetup"
+                    },
+                    "@text": "6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "22",
+                      "n": "FaultMask"
+                    },
+                    "@text": "1355157455"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "46",
+                      "n": "FeedbackInput1"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "390",
+                      "n": "FeedforwardAdvance"
+                    },
+                    "@text": "0.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "463",
+                      "n": "FeedforwardFilter00CoeffD1"
+                    },
+                    "@text": "-1.564504"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "464",
+                      "n": "FeedforwardFilter00CoeffD2"
+                    },
+                    "@text": "0.64366233"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "460",
+                      "n": "FeedforwardFilter00CoeffN0"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "461",
+                      "n": "FeedforwardFilter00CoeffN1"
+                    },
+                    "@text": "0.039579164"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "462",
+                      "n": "FeedforwardFilter00CoeffN2"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "499",
+                      "n": "FeedforwardFilterSetup"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "7",
+                      "n": "FeedforwardGainAff"
+                    },
+                    "@text": "12.6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "496",
+                      "n": "FeedforwardGainNormalizationFactor"
+                    },
+                    "@text": "925500000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "72",
+                      "n": "HomeRampRate"
+                    },
+                    "@text": "500"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "70",
+                      "n": "HomeSpeed"
+                    },
+                    "@text": "50"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "36",
+                      "n": "InPositionDistance"
+                    },
+                    "@text": "0.0001"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "109",
+                      "n": "JoystickHighSpeed"
+                    },
+                    "@text": "160"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "108",
+                      "n": "JoystickLowSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "53",
+                      "n": "LimitDecelDistance"
+                    },
+                    "@text": "4"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "35",
+                      "n": "MaxCurrentClamp"
+                    },
+                    "@text": "10"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "92",
+                      "n": "MaxJogSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "205",
+                      "n": "MaxSpeedClamp"
+                    },
+                    "@text": "2000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "500",
+                      "n": "MotorPolePitch"
+                    },
+                    "@text": "25"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "28",
+                      "n": "PositionErrorThreshold"
+                    },
+                    "@text": "0.25"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "47",
+                      "n": "PrimaryEncoderMultiplicationFactor"
+                    },
+                    "@text": "1000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "501",
+                      "n": "PrimaryFeedbackResolution"
+                    },
+                    "@text": "0.02"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "9",
+                      "n": "ServoLoopFilter00CoeffN0"
+                    },
+                    "@text": "0.019789578"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "10",
+                      "n": "ServoLoopFilter00CoeffN1"
+                    },
+                    "@text": "0.039579157"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "11",
+                      "n": "ServoLoopFilter00CoeffN2"
+                    },
+                    "@text": "0.019789578"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "17",
+                      "n": "ServoLoopFilter01CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "18",
+                      "n": "ServoLoopFilter01CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "14",
+                      "n": "ServoLoopFilter01CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "15",
+                      "n": "ServoLoopFilter01CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "16",
+                      "n": "ServoLoopFilter01CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "85",
+                      "n": "ServoLoopFilter02CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "86",
+                      "n": "ServoLoopFilter02CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "82",
+                      "n": "ServoLoopFilter02CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "83",
+                      "n": "ServoLoopFilter02CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "84",
+                      "n": "ServoLoopFilter02CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "90",
+                      "n": "ServoLoopFilter03CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "91",
+                      "n": "ServoLoopFilter03CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "87",
+                      "n": "ServoLoopFilter03CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "88",
+                      "n": "ServoLoopFilter03CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "89",
+                      "n": "ServoLoopFilter03CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "185",
+                      "n": "ServoLoopFilter04CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "186",
+                      "n": "ServoLoopFilter04CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "182",
+                      "n": "ServoLoopFilter04CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "183",
+                      "n": "ServoLoopFilter04CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "184",
+                      "n": "ServoLoopFilter04CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "190",
+                      "n": "ServoLoopFilter05CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "191",
+                      "n": "ServoLoopFilter05CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "187",
+                      "n": "ServoLoopFilter05CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "188",
+                      "n": "ServoLoopFilter05CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "189",
+                      "n": "ServoLoopFilter05CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "486",
+                      "n": "ServoLoopGainK"
+                    },
+                    "@text": "2.39"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "484",
+                      "n": "ServoLoopGainKip"
+                    },
+                    "@text": "8.97"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "487",
+                      "n": "ServoLoopGainKiv"
+                    },
+                    "@text": "17.9"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "489",
+                      "n": "ServoLoopGainNormalizationFactor"
+                    },
+                    "@text": "925500"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "32",
+                      "n": "VelocityErrorThreshold"
+                    },
+                    "@text": "200"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "1"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "67",
+                      "n": "AbortDecelRate"
+                    },
+                    "@text": "1100"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "29",
+                      "n": "AverageCurrentThreshold"
+                    },
+                    "@text": "4.197731"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "Y"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "532",
+                      "n": "BusOvervoltageThreshold"
+                    },
+                    "@text": "400"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "3000000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "540",
+                      "n": "CurrentLoopFeedforwardBackEmf"
+                    },
+                    "@text": "21.28"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "541",
+                      "n": "CurrentLoopFeedforwardBusVoltage"
+                    },
+                    "@text": "160"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "539",
+                      "n": "CurrentLoopFeedforwardGainLff"
+                    },
+                    "@text": "1.33"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "538",
+                      "n": "CurrentLoopFeedforwardGainRff"
+                    },
+                    "@text": "4.8"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "21",
+                      "n": "CurrentLoopGainK"
+                    },
+                    "@text": "590"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "20",
+                      "n": "CurrentLoopGainKi"
+                    },
+                    "@text": "3200"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "66",
+                      "n": "DefaultAxisRampRate"
+                    },
+                    "@text": "1000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "65",
+                      "n": "DefaultAxisSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "55",
+                      "n": "EndOfTravelLimitSetup"
+                    },
+                    "@text": "6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "22",
+                      "n": "FaultMask"
+                    },
+                    "@text": "1355157455"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "46",
+                      "n": "FeedbackInput1"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "390",
+                      "n": "FeedforwardAdvance"
+                    },
+                    "@text": "0.9263011"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "463",
+                      "n": "FeedforwardFilter00CoeffD1"
+                    },
+                    "@text": "-1.564504"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "464",
+                      "n": "FeedforwardFilter00CoeffD2"
+                    },
+                    "@text": "0.64366233"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "460",
+                      "n": "FeedforwardFilter00CoeffN0"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "461",
+                      "n": "FeedforwardFilter00CoeffN1"
+                    },
+                    "@text": "0.039579164"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "462",
+                      "n": "FeedforwardFilter00CoeffN2"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "499",
+                      "n": "FeedforwardFilterSetup"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "7",
+                      "n": "FeedforwardGainAff"
+                    },
+                    "@text": "14.2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "496",
+                      "n": "FeedforwardGainNormalizationFactor"
+                    },
+                    "@text": "55530000000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "71",
+                      "n": "HomeOffset"
+                    },
+                    "@text": "0.8811508178710952"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "72",
+                      "n": "HomeRampRate"
+                    },
+                    "@text": "500"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "70",
+                      "n": "HomeSpeed"
+                    },
+                    "@text": "20"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "68",
+                      "n": "HomeType"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "36",
+                      "n": "InPositionDistance"
+                    },
+                    "@text": "2.5E-05"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "109",
+                      "n": "JoystickHighSpeed"
+                    },
+                    "@text": "160"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "108",
+                      "n": "JoystickLowSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "53",
+                      "n": "LimitDecelDistance"
+                    },
+                    "@text": "4"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "35",
+                      "n": "MaxCurrentClamp"
+                    },
+                    "@text": "20"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "92",
+                      "n": "MaxJogSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "205",
+                      "n": "MaxSpeedClamp"
+                    },
+                    "@text": "2000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "500",
+                      "n": "MotorPolePitch"
+                    },
+                    "@text": "25"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "28",
+                      "n": "PositionErrorThreshold"
+                    },
+                    "@text": "0.25"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "47",
+                      "n": "PrimaryEncoderMultiplicationFactor"
+                    },
+                    "@text": "60000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "501",
+                      "n": "PrimaryFeedbackResolution"
+                    },
+                    "@text": "0.0003333333333333333"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "9",
+                      "n": "ServoLoopFilter00CoeffN0"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "10",
+                      "n": "ServoLoopFilter00CoeffN1"
+                    },
+                    "@text": "0.039579164"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "11",
+                      "n": "ServoLoopFilter00CoeffN2"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "17",
+                      "n": "ServoLoopFilter01CoeffD1"
+                    },
+                    "@text": "-1.9528092"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "18",
+                      "n": "ServoLoopFilter01CoeffD2"
+                    },
+                    "@text": "0.95522696"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "14",
+                      "n": "ServoLoopFilter01CoeffN0"
+                    },
+                    "@text": "0.97991484"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "15",
+                      "n": "ServoLoopFilter01CoeffN1"
+                    },
+                    "@text": "-1.9528092"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "16",
+                      "n": "ServoLoopFilter01CoeffN2"
+                    },
+                    "@text": "0.9753121"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "85",
+                      "n": "ServoLoopFilter02CoeffD1"
+                    },
+                    "@text": "-1.9660163"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "86",
+                      "n": "ServoLoopFilter02CoeffD2"
+                    },
+                    "@text": "0.97450954"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "82",
+                      "n": "ServoLoopFilter02CoeffN0"
+                    },
+                    "@text": "0.98968613"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "83",
+                      "n": "ServoLoopFilter02CoeffN1"
+                    },
+                    "@text": "-1.9660163"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "84",
+                      "n": "ServoLoopFilter02CoeffN2"
+                    },
+                    "@text": "0.9848234"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "178",
+                      "n": "ServoLoopFilterSetup"
+                    },
+                    "@text": "7"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "486",
+                      "n": "ServoLoopGainK"
+                    },
+                    "@text": "1.698"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "484",
+                      "n": "ServoLoopGainKip"
+                    },
+                    "@text": "3.955"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "487",
+                      "n": "ServoLoopGainKiv"
+                    },
+                    "@text": "7.909"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "489",
+                      "n": "ServoLoopGainNormalizationFactor"
+                    },
+                    "@text": "55530000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "32",
+                      "n": "VelocityErrorThreshold"
+                    },
+                    "@text": "200"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "2"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "Z"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "3"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "U"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "4"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "A"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "5"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "B"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "6"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "C"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "7"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "x"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "100000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "46",
+                      "n": "FeedbackInput1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "1"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "8"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "y"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "100000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "179",
+                      "n": "FeedbackSetup"
+                    },
+                    "@text": "512"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "1"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "9"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "a"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "10"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "z"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "11"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "u"
+                }
+              }
+            ]
+          },
+          "Tasks": {}
+        }
+      }
+    }
+  },
+  "file2": {
+    "path": "C:/Users/tbates/Python/MCD Comparison/New MCD/PRO165.mcd",
+    "content": {
+      "@attributes": {
+        "SchemaVersion": "1.0.0.0"
+      },
+      "FileInformation": {
+        "SoftwareVersion": {
+          "@text": "2.9.2.2978"
+        },
+        "OldestCompatibleSoftwareVersion": {
+          "@text": "1.0.0.0"
+        }
+      },
+      "Data": {
+        "Parameters": {
+          "System": {},
+          "Axes": {
+            "Axis": [
+              {
+                "@attributes": {
+                  "Index": "0"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "67",
+                      "n": "AbortDecelRate"
+                    },
+                    "@text": "1100"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "29",
+                      "n": "AverageCurrentThreshold"
+                    },
+                    "@text": "2.0996442"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "ST03"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "25",
+                      "n": "BrakeSetup"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "532",
+                      "n": "BusOvervoltageThreshold"
+                    },
+                    "@text": "400"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "2000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "540",
+                      "n": "CurrentLoopFeedforwardBackEmf"
+                    },
+                    "@text": "34"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "541",
+                      "n": "CurrentLoopFeedforwardBusVoltage"
+                    },
+                    "@text": "160"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "539",
+                      "n": "CurrentLoopFeedforwardGainLff"
+                    },
+                    "@text": "3.4"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "538",
+                      "n": "CurrentLoopFeedforwardGainRff"
+                    },
+                    "@text": "13.6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "21",
+                      "n": "CurrentLoopGainK"
+                    },
+                    "@text": "1300"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "20",
+                      "n": "CurrentLoopGainKi"
+                    },
+                    "@text": "3900"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "398",
+                      "n": "CurrentLoopSetup"
+                    },
+                    "@text": "32"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "66",
+                      "n": "DefaultAxisRampRate"
+                    },
+                    "@text": "1000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "177",
+                      "n": "DefaultAxisRampTime"
+                    },
+                    "@text": "0.1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "65",
+                      "n": "DefaultAxisSpeed"
+                    },
+                    "@text": "40"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "55",
+                      "n": "EndOfTravelLimitSetup"
+                    },
+                    "@text": "6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "22",
+                      "n": "FaultMask"
+                    },
+                    "@text": "1355157455"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "46",
+                      "n": "FeedbackInput1"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "390",
+                      "n": "FeedforwardAdvance"
+                    },
+                    "@text": "0.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "463",
+                      "n": "FeedforwardFilter00CoeffD1"
+                    },
+                    "@text": "-1.564504"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "464",
+                      "n": "FeedforwardFilter00CoeffD2"
+                    },
+                    "@text": "0.64366233"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "460",
+                      "n": "FeedforwardFilter00CoeffN0"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "461",
+                      "n": "FeedforwardFilter00CoeffN1"
+                    },
+                    "@text": "0.039579164"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "462",
+                      "n": "FeedforwardFilter00CoeffN2"
+                    },
+                    "@text": "0.019789582"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "499",
+                      "n": "FeedforwardFilterSetup"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "7",
+                      "n": "FeedforwardGainAff"
+                    },
+                    "@text": "71.3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "496",
+                      "n": "FeedforwardGainNormalizationFactor"
+                    },
+                    "@text": "635607025.674287"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "6",
+                      "n": "FeedforwardGainVff"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "72",
+                      "n": "HomeRampRate"
+                    },
+                    "@text": "500"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "70",
+                      "n": "HomeSpeed"
+                    },
+                    "@text": "40"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "36",
+                      "n": "InPositionDistance"
+                    },
+                    "@text": "0.0025"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "109",
+                      "n": "JoystickHighSpeed"
+                    },
+                    "@text": "80"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "108",
+                      "n": "JoystickLowSpeed"
+                    },
+                    "@text": "40"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "81",
+                      "n": "LimitDebounceDistance"
+                    },
+                    "@text": "5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "53",
+                      "n": "LimitDecelDistance"
+                    },
+                    "@text": "4.7"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "35",
+                      "n": "MaxCurrentClamp"
+                    },
+                    "@text": "8.540925"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "92",
+                      "n": "MaxJogSpeed"
+                    },
+                    "@text": "40"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "205",
+                      "n": "MaxSpeedClamp"
+                    },
+                    "@text": "300"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "500",
+                      "n": "MotorPolePitch"
+                    },
+                    "@text": "8"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "37",
+                      "n": "MotorType"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "28",
+                      "n": "PositionErrorThreshold"
+                    },
+                    "@text": "0.25"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "501",
+                      "n": "PrimaryFeedbackResolution"
+                    },
+                    "@text": "10000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "9",
+                      "n": "ServoLoopFilter00CoeffN0"
+                    },
+                    "@text": "0.019789578"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "10",
+                      "n": "ServoLoopFilter00CoeffN1"
+                    },
+                    "@text": "0.039579157"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "11",
+                      "n": "ServoLoopFilter00CoeffN2"
+                    },
+                    "@text": "0.019789578"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "17",
+                      "n": "ServoLoopFilter01CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "18",
+                      "n": "ServoLoopFilter01CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "14",
+                      "n": "ServoLoopFilter01CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "15",
+                      "n": "ServoLoopFilter01CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "16",
+                      "n": "ServoLoopFilter01CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "85",
+                      "n": "ServoLoopFilter02CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "86",
+                      "n": "ServoLoopFilter02CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "82",
+                      "n": "ServoLoopFilter02CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "83",
+                      "n": "ServoLoopFilter02CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "84",
+                      "n": "ServoLoopFilter02CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "90",
+                      "n": "ServoLoopFilter03CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "91",
+                      "n": "ServoLoopFilter03CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "87",
+                      "n": "ServoLoopFilter03CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "88",
+                      "n": "ServoLoopFilter03CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "89",
+                      "n": "ServoLoopFilter03CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "185",
+                      "n": "ServoLoopFilter04CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "186",
+                      "n": "ServoLoopFilter04CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "182",
+                      "n": "ServoLoopFilter04CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "183",
+                      "n": "ServoLoopFilter04CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "184",
+                      "n": "ServoLoopFilter04CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "190",
+                      "n": "ServoLoopFilter05CoeffD1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "191",
+                      "n": "ServoLoopFilter05CoeffD2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "187",
+                      "n": "ServoLoopFilter05CoeffN0"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "188",
+                      "n": "ServoLoopFilter05CoeffN1"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "189",
+                      "n": "ServoLoopFilter05CoeffN2"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "486",
+                      "n": "ServoLoopGainK"
+                    },
+                    "@text": "13.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "484",
+                      "n": "ServoLoopGainKip"
+                    },
+                    "@text": "8.97"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "487",
+                      "n": "ServoLoopGainKiv"
+                    },
+                    "@text": "17.9"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "489",
+                      "n": "ServoLoopGainNormalizationFactor"
+                    },
+                    "@text": "635607.025674287"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "95",
+                      "n": "UnitsName"
+                    },
+                    "@text": "mm"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "32",
+                      "n": "VelocityErrorThreshold"
+                    },
+                    "@text": "30"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "1"
+                },
+                "P": [
+                  {
+                    "@attributes": {
+                      "id": "67",
+                      "n": "AbortDecelRate"
+                    },
+                    "@text": "33"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "401",
+                      "n": "AuxiliaryEncoderCosineGain"
+                    },
+                    "@text": "1.014228"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "402",
+                      "n": "AuxiliaryEncoderCosineOffset"
+                    },
+                    "@text": "0.37810844"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "404",
+                      "n": "AuxiliaryEncoderMultiplicationFactor"
+                    },
+                    "@text": "16384"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "406",
+                      "n": "AuxiliaryEncoderPhase"
+                    },
+                    "@text": "-0.08640264"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "407",
+                      "n": "AuxiliaryEncoderSineGain"
+                    },
+                    "@text": "1.0324553"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "408",
+                      "n": "AuxiliaryEncoderSineOffset"
+                    },
+                    "@text": "-3.434746"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "502",
+                      "n": "AuxiliaryFeedbackResolution"
+                    },
+                    "@text": "2353033233.6820226"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "45",
+                      "n": "AuxiliaryFeedbackType"
+                    },
+                    "@text": "2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "29",
+                      "n": "AverageCurrentThreshold"
+                    },
+                    "@text": "5.980392"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "0",
+                      "n": "AxisName"
+                    },
+                    "@text": "EL"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "25",
+                      "n": "BrakeSetup"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "4",
+                      "n": "CountsPerUnit"
+                    },
+                    "@text": "6536203.426894507"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "540",
+                      "n": "CurrentLoopFeedforwardBackEmf"
+                    },
+                    "@text": "69"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "539",
+                      "n": "CurrentLoopFeedforwardGainLff"
+                    },
+                    "@text": "4.27"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "538",
+                      "n": "CurrentLoopFeedforwardGainRff"
+                    },
+                    "@text": "1.2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "21",
+                      "n": "CurrentLoopGainK"
+                    },
+                    "@text": "7700"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "20",
+                      "n": "CurrentLoopGainKi"
+                    },
+                    "@text": "810"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "66",
+                      "n": "DefaultAxisRampRate"
+                    },
+                    "@text": "30"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "177",
+                      "n": "DefaultAxisRampTime"
+                    },
+                    "@text": "0.1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "269",
+                      "n": "DefaultAxisRampType"
+                    },
+                    "@text": "2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "65",
+                      "n": "DefaultAxisSpeed"
+                    },
+                    "@text": "0.75"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "55",
+                      "n": "EndOfTravelLimitSetup"
+                    },
+                    "@text": "6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "22",
+                      "n": "FaultMask"
+                    },
+                    "@text": "1355026431"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "44",
+                      "n": "FeedbackInput0"
+                    },
+                    "@text": "3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "46",
+                      "n": "FeedbackInput1"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "7",
+                      "n": "FeedforwardGainAff"
+                    },
+                    "@text": "105873"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "496",
+                      "n": "FeedforwardGainNormalizationFactor"
+                    },
+                    "@text": "22827531634606.133"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "6",
+                      "n": "FeedforwardGainVff"
+                    },
+                    "@text": "1311200"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "71",
+                      "n": "HomeOffset"
+                    },
+                    "@text": "-0.0995"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "72",
+                      "n": "HomeRampRate"
+                    },
+                    "@text": "30"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "70",
+                      "n": "HomeSpeed"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "68",
+                      "n": "HomeType"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "36",
+                      "n": "InPositionDistance"
+                    },
+                    "@text": "2.777777777777778E-05"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "109",
+                      "n": "JoystickHighSpeed"
+                    },
+                    "@text": "1.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "108",
+                      "n": "JoystickLowSpeed"
+                    },
+                    "@text": "0.375"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "81",
+                      "n": "LimitDebounceDistance"
+                    },
+                    "@text": "3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "53",
+                      "n": "LimitDecelDistance"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "528",
+                      "n": "LinearAmpVoltageClamp"
+                    },
+                    "@text": "40"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "35",
+                      "n": "MaxCurrentClamp"
+                    },
+                    "@text": "20"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "64",
+                      "n": "MaxJogDistance"
+                    },
+                    "@text": "8"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "92",
+                      "n": "MaxJogSpeed"
+                    },
+                    "@text": "1.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "205",
+                      "n": "MaxSpeedClamp"
+                    },
+                    "@text": "3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "500",
+                      "n": "MotorPolePitch"
+                    },
+                    "@text": "8"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "37",
+                      "n": "MotorType"
+                    },
+                    "@text": "1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "28",
+                      "n": "PositionErrorThreshold"
+                    },
+                    "@text": "0.5"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "50",
+                      "n": "PrimaryEncoder0CosineGain"
+                    },
+                    "@text": "1.0129569"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "51",
+                      "n": "PrimaryEncoder0CosineOffset"
+                    },
+                    "@text": "10.538486"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "52",
+                      "n": "PrimaryEncoder0Phase"
+                    },
+                    "@text": "-1.8510743"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "48",
+                      "n": "PrimaryEncoder0SineGain"
+                    },
+                    "@text": "1.0099529"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "49",
+                      "n": "PrimaryEncoder0SineOffset"
+                    },
+                    "@text": "8.59497"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "47",
+                      "n": "PrimaryEncoderMultiplicationFactor"
+                    },
+                    "@text": "2000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "501",
+                      "n": "PrimaryFeedbackResolution"
+                    },
+                    "@text": "2000000"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "43",
+                      "n": "PrimaryFeedbackType"
+                    },
+                    "@text": "2"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "17",
+                      "n": "ServoLoopFilter01CoeffD1"
+                    },
+                    "@text": "-1.8729502"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "18",
+                      "n": "ServoLoopFilter01CoeffD2"
+                    },
+                    "@text": "0.9126905"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "14",
+                      "n": "ServoLoopFilter01CoeffN0"
+                    },
+                    "@text": "0.95880014"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "15",
+                      "n": "ServoLoopFilter01CoeffN1"
+                    },
+                    "@text": "-1.8729502"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "16",
+                      "n": "ServoLoopFilter01CoeffN2"
+                    },
+                    "@text": "0.9538904"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "178",
+                      "n": "ServoLoopFilterSetup"
+                    },
+                    "@text": "3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "486",
+                      "n": "ServoLoopGainK"
+                    },
+                    "@text": "31710016"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "484",
+                      "n": "ServoLoopGainKip"
+                    },
+                    "@text": "0"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "483",
+                      "n": "ServoLoopGainKip2"
+                    },
+                    "@text": "4.09"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "487",
+                      "n": "ServoLoopGainKiv"
+                    },
+                    "@text": "21.6"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "8",
+                      "n": "ServoLoopGainKv"
+                    },
+                    "@text": "1.0158802543810679"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "489",
+                      "n": "ServoLoopGainNormalizationFactor"
+                    },
+                    "@text": "22827531634606.133"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "34",
+                      "n": "SoftwareLimitHigh"
+                    },
+                    "@text": "4.1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "33",
+                      "n": "SoftwareLimitLow"
+                    },
+                    "@text": "-4.1"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "95",
+                      "n": "UnitsName"
+                    },
+                    "@text": "deg"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "31",
+                      "n": "VelocityCommandThreshold"
+                    },
+                    "@text": "3.3"
+                  },
+                  {
+                    "@attributes": {
+                      "id": "32",
+                      "n": "VelocityErrorThreshold"
+                    },
+                    "@text": "0.3"
+                  }
+                ]
+              },
+              {
+                "@attributes": {
+                  "Index": "2"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "Z"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "3"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "U"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "4"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "A"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "5"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "B"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "6"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "C"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "7"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "D"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "8"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "x"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "9"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "y"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "10"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "z"
+                }
+              },
+              {
+                "@attributes": {
+                  "Index": "11"
+                },
+                "P": {
+                  "@attributes": {
+                    "id": "0",
+                    "n": "AxisName"
+                  },
+                  "@text": "u"
+                }
+              }
+            ]
+          },
+          "Tasks": {}
+        }
+      }
+    }
+  }
+}
