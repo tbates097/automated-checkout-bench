@@ -176,8 +176,8 @@ def UI():
     usable_height = ctypes.windll.user32.GetSystemMetrics(79)  # Height excluding taskbar
     
     # Set desired window size
-    window_height = 950
-    window_width = 775
+    window_height = 950  # Reduced from 1100
+    window_width = 900   # Keep width the same
     
     # Ensure the window size does not exceed usable screen dimensions
     window_width = min(window_width, usable_width)
@@ -266,16 +266,16 @@ def UI():
     # MAIN USER INPUT FRAME
     '''
     
-    input_frame_width = 700
-    input_frame_height = 800
+    input_frame_width = 850  # Keep width the same
+    input_frame_height = 750  # Reduced from 900
     
     input_frame = tk.Frame(master=window, width=input_frame_width, height=input_frame_height)
-    input_frame.grid(row=0, column=0, sticky='nsew')
+    input_frame.grid(row=0, column=0, sticky='nsew', padx=20, pady=10)  # Reduced pady from 15
     input_frame.grid_propagate(True)
     
-    # Configure columns and rows
-    input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=700 / 4, uniform='column')
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], weight=1, minsize=1)
+    # Configure columns and rows with more space
+    input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=850 / 4, uniform='column')
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], weight=1, minsize=35)  # Reduced minsize from 40
 
     # Define row indices
     input_frame.h1_row = 0
@@ -293,11 +293,30 @@ def UI():
     input_frame.run_row = 12
     input_frame.out_row = 13
 
-    # Create horizontal separators
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h1_row, column=0, columnspan=4, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h2_row, column=0, columnspan=4, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h3_row, column=0, columnspan=4, sticky='nsew')
-    ttk.Separator(master=input_frame, orient='horizontal').grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='nsew')
+    # Define Automation1 Studio-inspired color palette
+    BACKGROUND = "#F0F0F0"  # Light gray background
+    WHITE = "#FFFFFF"  # Pure white for input fields
+    BLUE_PRIMARY = "#0078D4"  # Aerotech blue
+    BLUE_HOVER = "#106EBE"  # Slightly darker blue for hover
+    BLUE_ACTIVE = "#005A9E"  # Darker blue for clicking
+    TEXT_PRIMARY = "#252423"  # Darker gray for primary text
+    TEXT_SECONDARY = "#484644"  # Medium gray for secondary text
+    BORDER = "#E1E1E1"  # Light border color
+    DISABLED_BG = "#F3F2F1"  # Slightly darker than background for disabled
+    DISABLED_FG = "#A19F9D"  # Muted text for disabled elements
+
+    # Create horizontal separators with light border appearance
+    #sep1 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    #sep1.grid(row=input_frame.h1_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep2 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep2.grid(row=input_frame.h2_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep3 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep3.grid(row=input_frame.h3_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep4 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep4.grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
     
     # Load stored data or set defaults
     speed_value = stored_data.get("speed", 360)
@@ -310,10 +329,10 @@ def UI():
     # TEXT WIDGET FRAME
     '''
     
-    # Create the frame without fixed width and height
+    # Create the text frame with adjusted padding
     text_frame = tk.Frame(master=window)
-    text_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-    text_frame.grid_propagate(False)  # Allow frame to resize based on content
+    text_frame.grid(row=1, column=0, sticky='nsew', padx=20, pady=10)  # Reduced pady from 15
+    text_frame.grid_propagate(False)
     
     # Configure the grid in text_frame_tab3
     text_frame.grid_rowconfigure(0, weight=1)  # Allow row 0 to expand
@@ -599,87 +618,106 @@ def UI():
     label_font = font.Font(family="Helvetica", size=10, weight="bold")
     button_font = font.Font(family="Arial", size=12, weight="bold") 
 
+    # Adjust padding for all grid elements
+    standard_padx = 10  # Keep the same
+    standard_pady = 6   # Reduced from 8
+
     # Test Type Selection
     lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
-    lbl_stage.grid(row=input_frame.ID_row, column=0, padx=5, pady=5)
+    lbl_stage.grid(row=input_frame.ID_row, column=0, padx=standard_padx, pady=standard_pady)
 
-    part_entry = tk.Entry(input_frame, textvariable=part_number, width=25)
-    part_entry.grid(row=input_frame.ID_row, column=1, columnspan=2, padx=5, pady=5)
+    part_entry = tk.Entry(input_frame, textvariable=part_number, width=20)
+    part_entry.grid(row=input_frame.ID_row, column=1, padx=standard_padx, pady=standard_pady)
     part_entry.bind("<FocusIn>", on_entry_focus)
-    part_entry.focus()  # Set focus to the part number field when window opens
+    part_entry.focus()
 
-    scan_button = tk.Button(input_frame, text="Retrieve Stage Options", width=20, height=1, font=button_font, background="lightgray", command=on_scan)
-    scan_button.grid(row=input_frame.config_button_row, column=1, columnspan=2, padx=5, pady=5)
+    scan_button = tk.Button(input_frame, text="Configure", width=15, height=1, font=label_font, background="lightgray", command=on_scan)  # Changed text and font
+    scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=standard_padx, pady=standard_pady)
 
     lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", width=25, height=1, font=label_font)
-    lbl_num_axes.grid(row=input_frame.num_axes_row, column=0, padx=5, pady=5)
+    lbl_num_axes.grid(row=input_frame.num_axes_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_num_axes = tk.IntVar(value="")
     ent_num_axes = tk.Entry(master=input_frame, textvariable=var_num_axes, width=15)
-    ent_num_axes.grid(row=input_frame.num_axes_row, column=1, padx=5, pady=5)
+    ent_num_axes.grid(row=input_frame.num_axes_row, column=1, padx=standard_padx, pady=standard_pady)
     
     lbl_abs = tk.Label(master=input_frame, text="Absolute Encoder?", width=25, height=1, font=label_font)
-    lbl_abs.grid(row=input_frame.num_axes_row, column=2, padx=5, pady=5)
+    lbl_abs.grid(row=input_frame.num_axes_row, column=2, padx=standard_padx, pady=standard_pady)
     
     abs_var = tk.StringVar(value="No")
     abs_ent = tk.Radiobutton(master=input_frame, text="Yes", variable=abs_var, value="Yes", command=abs_def)
-    abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=5, pady=5)
+    abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=standard_padx, pady=standard_pady)
 
     lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1, font=label_font)
-    lbl_speed.grid(row=input_frame.speed_row, column=0, padx=5, pady=5)
+    lbl_speed.grid(row=input_frame.speed_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_speed = tk.DoubleVar(value=speed_value)
     ent_speed = tk.Entry(master=input_frame, textvariable=var_speed, width=15)
-    ent_speed.grid(row=input_frame.speed_row, column=1, padx=5, pady=5)
+    ent_speed.grid(row=input_frame.speed_row, column=1, padx=standard_padx, pady=standard_pady)
     
     lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", width=25, height=1, font=label_font)
-    lbl_duty_cycle.grid(row=input_frame.speed_row, column=2, padx=5, pady=5)
+    lbl_duty_cycle.grid(row=input_frame.speed_row, column=2, padx=standard_padx, pady=standard_pady)
     
     var_duty_cycle = tk.DoubleVar(value=duty_cycle_value)
     ent_duty_cycle = tk.Entry(master=input_frame, textvariable=var_duty_cycle, width=15)
-    ent_duty_cycle.grid(row=input_frame.speed_row, column=3, padx=5, pady=5)
+    ent_duty_cycle.grid(row=input_frame.speed_row, column=3, padx=standard_padx, pady=standard_pady)
     
     lbl_cycles = tk.Label(master=input_frame, text="Burn-In Time", width=25, height=1, font=label_font)
-    lbl_cycles.grid(row=input_frame.cycles_row, column=0, padx=5, pady=5)
+    lbl_cycles.grid(row=input_frame.cycles_row, column=0, padx=standard_padx, pady=standard_pady)
     
     time_var = tk.StringVar(value=0)
     default = tk.Radiobutton(master=input_frame, text="Default", variable=time_var, value="default", command=time_def)
-    default.grid(row=input_frame.cycles_row, column=1, padx=5, pady=5)
+    default.grid(row=input_frame.cycles_row, column=1, padx=standard_padx, pady=standard_pady)
     
     other = tk.Radiobutton(master=input_frame, text="Other (Hours)", variable=time_var, value="other", command=time_def)
-    other.grid(row=input_frame.cycles_row, column=2, padx=5, pady=5)
+    other.grid(row=input_frame.cycles_row, column=2, padx=standard_padx, pady=standard_pady)
     
     var_time = tk.IntVar(value=0)
-    ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=15,state=tk.DISABLED)
-    ent_other.grid(row=input_frame.cycles_row, column=3, padx=5, pady=5)
+    ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=15, state=tk.DISABLED)
+    ent_other.grid(row=input_frame.cycles_row, column=3, padx=standard_padx, pady=standard_pady)
     
     # Stage Serial Number Input
     lbl_job = tk.Label(master=input_frame, text="Job Number", font=label_font)
-    lbl_job.grid(row=input_frame.job_row, column=0, padx=5, pady=5)
+    lbl_job.grid(row=input_frame.job_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_job = tk.StringVar(value=job_value)
-    ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=45)
-    ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=5, pady=5)
+    ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=50)
+    ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
     
     # Operator Input
     lbl_op = tk.Label(master=input_frame, text="Operator", font=label_font)
-    lbl_op.grid(row=input_frame.op_row, column=0, padx=5, pady=5)
+    lbl_op.grid(row=input_frame.op_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_op = tk.StringVar(value=op_value)
-    ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=45)
-    ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=5, pady=5)
+    ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=50)
+    ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
     
     # Comments Input
     lbl_comments = tk.Label(master=input_frame, text="Comments", font=label_font)
-    lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=5)
+    lbl_comments.grid(row=input_frame.comm_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_comm = tk.StringVar(value=comm_value)
-    ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=45)
-    ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=5)
+    ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=50)
+    ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
     
+    # Configure entry field styling
+    entry_style = {
+        "relief": "solid",
+        "borderwidth": 1,
+        "highlightthickness": 1,
+        "highlightbackground": BORDER,
+        "highlightcolor": BORDER,
+        "bg": WHITE,
+        "fg": TEXT_SECONDARY
+    }
+
+    # Apply entry style to all entry fields
+    for entry in [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_job, ent_op, ent_comments]:
+        entry.configure(**entry_style)
+
     # Run and Open Plot Buttons
-    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='lightgray', font=button_font)
-    btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=5, pady=5)
+    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='lightgray', font=label_font)  # Updated font to match
+    btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
     
 # =============================================================================
 #     btn_open = tk.Button(master=input_frame, text="Open Plot", width=25, height=1, command=open_Plot)
@@ -714,161 +752,179 @@ def UI():
     window.protocol("WM_DELETE_WINDOW", on_closing)
     launch_secondary_ui()
 
-    # Define style constants
-    DARK_GRAY = "#2D2D2D"  # Main background color
-    MEDIUM_GRAY = "#3D3D3D"  # Secondary background
-    LIGHT_GRAY = "#4D4D4D"  # Button default color
-    BLUE_HIGHLIGHT = "#0078D4"  # Aerotech blue
-    TEXT_COLOR = "#FFFFFF"  # White text
-    LABEL_TEXT = "#CCCCCC"  # Light gray text
-    
-    # Configure root window style
-    window.configure(bg=DARK_GRAY)
-    
-    # Configure style for ttk widgets
+    # Enhanced ttk styling for Automation1 look
     style = ttk.Style()
-    style.configure(".", background=DARK_GRAY, foreground=TEXT_COLOR)
-    style.configure("TLabel", background=DARK_GRAY, foreground=TEXT_COLOR, font=("Segoe UI", 10))
-    style.configure("TButton", background=LIGHT_GRAY, foreground=TEXT_COLOR, font=("Segoe UI", 10))
-    style.configure("TEntry", background=MEDIUM_GRAY, foreground=TEXT_COLOR, fieldbackground=MEDIUM_GRAY)
-    style.configure("TFrame", background=DARK_GRAY)
+    style.configure(".", background=BACKGROUND, foreground=TEXT_PRIMARY)
     
-    # Configure input frame with new styling
-    input_frame.configure(bg=DARK_GRAY)
+    # Configure separator style to match border
+    style.configure("TSeparator", background=BORDER)  # Add this line to style the separators
     
-    # Style all labels
-    input_labels = [lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, 
-                    lbl_cycles, lbl_job, lbl_op, lbl_comments]
+    # Base styles that can be extended
+    base_style = {
+        "bg": BACKGROUND,
+        "relief": "flat",
+        "padx": 12,
+        "pady": 6
+    }
     
-    for widget in input_frame.winfo_children():
-        if isinstance(widget, tk.Label) and widget in input_labels:
-            widget.configure(
-                bg=DARK_GRAY,
-                fg=LABEL_TEXT,
-                font=("Segoe UI", 10, "bold"),
-                relief="flat",
-                padx=10,
-                pady=5
-            )
-        elif isinstance(widget, tk.Label):
-            widget.configure(
-                bg=DARK_GRAY,
-                fg=TEXT_COLOR,
-                font=("Segoe UI", 10)
-            )
-        elif isinstance(widget, tk.Entry):
-            widget.configure(
-                bg=MEDIUM_GRAY,
-                fg=TEXT_COLOR,
-                insertbackground=TEXT_COLOR,  # Cursor color
-                relief="flat",
-                font=("Segoe UI", 10)
-            )
-        elif isinstance(widget, tk.Button):
-            widget.configure(
-                bg=LIGHT_GRAY,
-                fg=TEXT_COLOR,
-                activebackground=BLUE_HIGHLIGHT,
-                activeforeground=TEXT_COLOR,
-                relief="flat",
-                font=("Segoe UI", 10, "bold"),
-                padx=10,
-                pady=5
-            )
-        elif isinstance(widget, tk.Radiobutton):
-            widget.configure(
-                bg=DARK_GRAY,
-                fg=TEXT_COLOR,
-                selectcolor=MEDIUM_GRAY,
-                activebackground=DARK_GRAY,
-                activeforeground=TEXT_COLOR,
-                font=("Segoe UI", 10)
-            )
+    # Main input field labels (bolder, darker)
+    main_label_style = {
+        **base_style,
+        "fg": TEXT_PRIMARY,
+        "font": ("Segoe UI Semibold", 11),
+        "anchor": "w"  # Left-align text
+    }
+    
+    # Supporting field labels (regular weight, slightly lighter)
+    supporting_label_style = {
+        **base_style,
+        "fg": TEXT_SECONDARY,
+        "font": ("Segoe UI", 10),
+        "anchor": "w"  # Left-align text
+    }
+    
+    # Entry field configurations
+    entry_style = {
+        "relief": "solid",
+        "borderwidth": 1,
+        "highlightthickness": 1,
+        "highlightbackground": BORDER,
+        "highlightcolor": BORDER,
+        "bg": WHITE,
+        "fg": TEXT_SECONDARY
+    }
 
-    # Style specific radio buttons and entry field
-    abs_ent.configure(
-        bg=DARK_GRAY,
-        fg=LABEL_TEXT,
-        selectcolor=MEDIUM_GRAY,
-        activebackground=DARK_GRAY,
-        activeforeground=LABEL_TEXT,
-        font=("Segoe UI", 10)
-    )
+    # Apply entry style to all entry fields
+    for entry in [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_job, ent_op, ent_comments]:
+        entry.configure(**entry_style)
+
+    # Main input fields (darker text)
+    main_entry_style = {
+        **entry_style,
+        "fg": TEXT_PRIMARY,
+        "insertbackground": TEXT_PRIMARY,
+        "font": ("Segoe UI", 11)
+    }
     
-    default.configure(
-        bg=DARK_GRAY,
-        fg=LABEL_TEXT,
-        selectcolor=MEDIUM_GRAY,
-        activebackground=DARK_GRAY,
-        activeforeground=LABEL_TEXT,
-        font=("Segoe UI", 10)
-    )
+    # Supporting input fields (regular text)
+    supporting_entry_style = {
+        **entry_style,
+        "fg": TEXT_SECONDARY,
+        "insertbackground": TEXT_SECONDARY,
+        "font": ("Segoe UI", 10)
+    }
+
+    # Standard button style
+    button_style = {
+        "bg": WHITE,
+        "fg": TEXT_PRIMARY,
+        "activebackground": BLUE_PRIMARY,
+        "activeforeground": WHITE,
+        "relief": "solid",
+        "font": ("Segoe UI", 10),
+        "padx": 15,
+        "pady": 8,
+        "cursor": "hand2",
+        "bd": 1
+    }
+
+    # Radio button style
+    radio_style = {
+        "bg": BACKGROUND,
+        "fg": TEXT_SECONDARY,
+        "selectcolor": WHITE,
+        "activebackground": BACKGROUND,
+        "activeforeground": BLUE_PRIMARY,
+        "font": ("Segoe UI", 10),
+        "cursor": "hand2"
+    }
+
+    # Action button style (blue buttons)
+    action_button_style = {
+        "bg": BLUE_PRIMARY,
+        "fg": WHITE,
+        "activebackground": BLUE_ACTIVE,
+        "activeforeground": WHITE,
+        "font": ("Segoe UI", 11),
+        "relief": "flat",
+        "cursor": "hand2",
+        "bd": 0
+    }
+
+    # Define main input fields
+    main_input_labels = [lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, lbl_cycles, lbl_job, lbl_op, lbl_comments]  # Main input labels
+    main_input_entries = [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_job, ent_op, ent_comments]  # Their corresponding entry fields
     
-    other.configure(
-        bg=DARK_GRAY,
-        fg=LABEL_TEXT,
-        selectcolor=MEDIUM_GRAY,
-        activebackground=DARK_GRAY,
-        activeforeground=LABEL_TEXT,
-        font=("Segoe UI", 10)
-    )
-    
-    # Style the "Other" entry field
-    ent_other.configure(
-        bg=MEDIUM_GRAY,
-        fg=TEXT_COLOR,
-        insertbackground=TEXT_COLOR,
-        relief="flat",
-        font=("Segoe UI", 10),
-        disabledbackground=DARK_GRAY,  # Better contrast when disabled
-        disabledforeground="gray50"    # Better contrast when disabled
-    )
-    
-    # Style the text output widget
+    # First apply base styles to all widgets
+    for widget in input_frame.winfo_children():
+        if isinstance(widget, tk.Label):
+            if widget in main_input_labels:
+                widget.configure(**main_label_style)
+            else:
+                widget.configure(**supporting_label_style)
+        elif isinstance(widget, tk.Entry):
+            if widget in main_input_entries:
+                widget.configure(**main_entry_style)
+            else:
+                widget.configure(**supporting_entry_style)
+        elif isinstance(widget, tk.Button):
+            widget.configure(**button_style)
+        elif isinstance(widget, tk.Radiobutton):
+            widget.configure(**radio_style)
+
+    # Style the text output area
     txt_outStr.configure(
-        bg=MEDIUM_GRAY,
-        fg=TEXT_COLOR,
-        insertbackground=TEXT_COLOR,
+        bg=WHITE,
+        fg=TEXT_PRIMARY,
+        insertbackground=TEXT_PRIMARY,
         font=("Consolas", 10),
-        relief="flat",
-        padx=5,
-        pady=5
+        relief="solid",
+        padx=10,
+        pady=10,
+        selectbackground=BLUE_PRIMARY,
+        selectforeground=WHITE,
+        bd=1,
+        highlightthickness=1,
+        highlightbackground=BORDER
     )
     
     # Style the scrollbar
     outStr_scroll.configure(
-        bg=LIGHT_GRAY,
-        troughcolor=DARK_GRAY,
-        activebackground=BLUE_HIGHLIGHT,
-        relief="flat"
+        bg=WHITE,
+        troughcolor=BACKGROUND,
+        activebackground=BLUE_PRIMARY,
+        relief="flat",
+        width=12,
+        bd=0
     )
     
-    # Style the main run button distinctively
+    # Configure action buttons
     btn_run.configure(
-        bg=BLUE_HIGHLIGHT,
-        fg=TEXT_COLOR,
-        activebackground="#005999",  # Darker blue when clicked
-        activeforeground=TEXT_COLOR,
-        font=("Segoe UI", 11, "bold"),
-        relief="flat",
+        **action_button_style,
         padx=20,
         pady=10
     )
     
-    # Style the scan button
     scan_button.configure(
-        bg=BLUE_HIGHLIGHT,
-        fg=TEXT_COLOR,
-        activebackground=BLUE_HIGHLIGHT,
-        activeforeground=TEXT_COLOR,
-        font=("Segoe UI", 11, "bold"),
-        relief="flat",
+        **action_button_style,
         padx=15,
         pady=8
     )
     
-    # Configure text frame with new styling
-    text_frame.configure(bg=DARK_GRAY)
+    # Configure frames
+    input_frame.configure(
+        bg=BACKGROUND,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        bd=0
+    )
+    
+    text_frame.configure(
+        bg=BACKGROUND,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        bd=0
+    )
     
     window.mainloop()
     
