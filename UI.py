@@ -713,6 +713,163 @@ def UI():
     # Bind the closing protocol
     window.protocol("WM_DELETE_WINDOW", on_closing)
     launch_secondary_ui()
+
+    # Define style constants
+    DARK_GRAY = "#2D2D2D"  # Main background color
+    MEDIUM_GRAY = "#3D3D3D"  # Secondary background
+    LIGHT_GRAY = "#4D4D4D"  # Button default color
+    BLUE_HIGHLIGHT = "#0078D4"  # Aerotech blue
+    TEXT_COLOR = "#FFFFFF"  # White text
+    LABEL_TEXT = "#CCCCCC"  # Light gray text
+    
+    # Configure root window style
+    window.configure(bg=DARK_GRAY)
+    
+    # Configure style for ttk widgets
+    style = ttk.Style()
+    style.configure(".", background=DARK_GRAY, foreground=TEXT_COLOR)
+    style.configure("TLabel", background=DARK_GRAY, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+    style.configure("TButton", background=LIGHT_GRAY, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+    style.configure("TEntry", background=MEDIUM_GRAY, foreground=TEXT_COLOR, fieldbackground=MEDIUM_GRAY)
+    style.configure("TFrame", background=DARK_GRAY)
+    
+    # Configure input frame with new styling
+    input_frame.configure(bg=DARK_GRAY)
+    
+    # Style all labels
+    input_labels = [lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, 
+                    lbl_cycles, lbl_job, lbl_op, lbl_comments]
+    
+    for widget in input_frame.winfo_children():
+        if isinstance(widget, tk.Label) and widget in input_labels:
+            widget.configure(
+                bg=DARK_GRAY,
+                fg=LABEL_TEXT,
+                font=("Segoe UI", 10, "bold"),
+                relief="flat",
+                padx=10,
+                pady=5
+            )
+        elif isinstance(widget, tk.Label):
+            widget.configure(
+                bg=DARK_GRAY,
+                fg=TEXT_COLOR,
+                font=("Segoe UI", 10)
+            )
+        elif isinstance(widget, tk.Entry):
+            widget.configure(
+                bg=MEDIUM_GRAY,
+                fg=TEXT_COLOR,
+                insertbackground=TEXT_COLOR,  # Cursor color
+                relief="flat",
+                font=("Segoe UI", 10)
+            )
+        elif isinstance(widget, tk.Button):
+            widget.configure(
+                bg=LIGHT_GRAY,
+                fg=TEXT_COLOR,
+                activebackground=BLUE_HIGHLIGHT,
+                activeforeground=TEXT_COLOR,
+                relief="flat",
+                font=("Segoe UI", 10, "bold"),
+                padx=10,
+                pady=5
+            )
+        elif isinstance(widget, tk.Radiobutton):
+            widget.configure(
+                bg=DARK_GRAY,
+                fg=TEXT_COLOR,
+                selectcolor=MEDIUM_GRAY,
+                activebackground=DARK_GRAY,
+                activeforeground=TEXT_COLOR,
+                font=("Segoe UI", 10)
+            )
+
+    # Style specific radio buttons and entry field
+    abs_ent.configure(
+        bg=DARK_GRAY,
+        fg=LABEL_TEXT,
+        selectcolor=MEDIUM_GRAY,
+        activebackground=DARK_GRAY,
+        activeforeground=LABEL_TEXT,
+        font=("Segoe UI", 10)
+    )
+    
+    default.configure(
+        bg=DARK_GRAY,
+        fg=LABEL_TEXT,
+        selectcolor=MEDIUM_GRAY,
+        activebackground=DARK_GRAY,
+        activeforeground=LABEL_TEXT,
+        font=("Segoe UI", 10)
+    )
+    
+    other.configure(
+        bg=DARK_GRAY,
+        fg=LABEL_TEXT,
+        selectcolor=MEDIUM_GRAY,
+        activebackground=DARK_GRAY,
+        activeforeground=LABEL_TEXT,
+        font=("Segoe UI", 10)
+    )
+    
+    # Style the "Other" entry field
+    ent_other.configure(
+        bg=MEDIUM_GRAY,
+        fg=TEXT_COLOR,
+        insertbackground=TEXT_COLOR,
+        relief="flat",
+        font=("Segoe UI", 10),
+        disabledbackground=DARK_GRAY,  # Better contrast when disabled
+        disabledforeground="gray50"    # Better contrast when disabled
+    )
+    
+    # Style the text output widget
+    txt_outStr.configure(
+        bg=MEDIUM_GRAY,
+        fg=TEXT_COLOR,
+        insertbackground=TEXT_COLOR,
+        font=("Consolas", 10),
+        relief="flat",
+        padx=5,
+        pady=5
+    )
+    
+    # Style the scrollbar
+    outStr_scroll.configure(
+        bg=LIGHT_GRAY,
+        troughcolor=DARK_GRAY,
+        activebackground=BLUE_HIGHLIGHT,
+        relief="flat"
+    )
+    
+    # Style the main run button distinctively
+    btn_run.configure(
+        bg=BLUE_HIGHLIGHT,
+        fg=TEXT_COLOR,
+        activebackground="#005999",  # Darker blue when clicked
+        activeforeground=TEXT_COLOR,
+        font=("Segoe UI", 11, "bold"),
+        relief="flat",
+        padx=20,
+        pady=10
+    )
+    
+    # Style the scan button
+    scan_button.configure(
+        bg=BLUE_HIGHLIGHT,
+        fg=TEXT_COLOR,
+        activebackground=BLUE_HIGHLIGHT,
+        activeforeground=TEXT_COLOR,
+        font=("Segoe UI", 11, "bold"),
+        relief="flat",
+        padx=15,
+        pady=8
+    )
+    
+    # Configure text frame with new styling
+    text_frame.configure(bg=DARK_GRAY)
+    
     window.mainloop()
     
 if __name__ == "__main__":
