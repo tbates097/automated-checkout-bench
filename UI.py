@@ -165,7 +165,7 @@ def launch_secondary_ui():
 def UI():
     global window, station_manager, part_entry
     window = tk.Tk()
-    window.title("Check-out Station")
+    window.title("Aerotech Stage Check-out")
     
     # Get screen width and height, including taskbar
     screen_width = ctypes.windll.user32.GetSystemMetrics(0)  # Full screen width
@@ -208,23 +208,11 @@ def UI():
                                              ctypes.c_ulong)
             callback_function = callback_type(callback)
             user32.EnumDisplayMonitors(None, None, callback_function, 0)
-            
-            # Try finding leftmost and rightmost based on physical layout
-            leftmost = min(monitors, key=lambda m: m['x'])
-            rightmost = max(monitors, key=lambda m: m['x'])
-            
             return monitors
         except Exception as e:
             print(f"Error getting screen info: {e}")
             return None
 
-    # Center the window on the screen
-    x_cordinate = 0  # We can keep these variables if needed elsewhere
-    y_cordinate = 0
-    
-    # Comment out or remove this line since it's overriding our rightmost monitor positioning
-    # window.geometry(f"{window_width}x{window_height}+{x_cordinate}+{y_cordinate}")
-    
     # Position window on rightmost screen
     screens = get_screen_info()
     if screens:
@@ -246,6 +234,25 @@ def UI():
         
         # Now set focus to part number entry
         window.after(100, lambda: (part_entry.focus_set(), part_entry.select_range(0, tk.END)))
+    
+    # Set window icon after positioning
+    try:
+        # Try to use Aerotech icon if available
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "aerotech.ico")
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+        else:
+            # If custom icon not found, use a built-in icon
+            window.iconbitmap('warning')  # Other options: 'info', 'question', 'error'
+    except:
+        pass  # Fallback to default icon if any error occurs
+    
+    # Configure title bar color (Windows only)
+    try:
+        window.tk.call('tk', 'windowingsystem')  # Check if running on Windows
+        window.tk.call('wm', 'iconphoto', window._w, tk.PhotoImage(file=os.path.join(os.path.dirname(__file__), "assets", "aerotech.jpg")))
+    except:
+        pass
     
     # Initialize StationManager
     station_manager = StationManager(window)
@@ -275,23 +282,30 @@ def UI():
     
     # Configure columns and rows with more space
     input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=850 / 4, uniform='column')
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], weight=1, minsize=35)  # Reduced minsize from 40
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], weight=1, minsize=35)  # Reduced minsize from 40
 
-    # Define row indices
-    input_frame.h1_row = 0
-    input_frame.ID_row = 1
-    input_frame.config_button_row = 2
-    input_frame.h2_row = 3
-    input_frame.num_axes_row = 4
-    input_frame.speed_row = 5
-    input_frame.cycles_row = 6
-    input_frame.h3_row = 7
-    input_frame.job_row = 8
-    input_frame.op_row = 9
-    input_frame.comm_row = 10
-    input_frame.h4_row = 11
-    input_frame.run_row = 12
-    input_frame.out_row = 13
+    # Define row indices with better spacing and grouping
+    input_frame.h1_row = 0        # Top separator
+    input_frame.config_label_row = 1  # "Configuration" heading
+    input_frame.ID_row = 2        # Part Number section
+    input_frame.num_axes_row = 3      # Number of Stages & Absolute Encoder
+    input_frame.h2_row = 4        # Separator after configuration
+    
+    input_frame.params_label_row = 5  # "Test Parameters" heading
+    input_frame.speed_row = 6         # Burn-In Speed & Duty Cycle
+    input_frame.cycles_row = 7        # Burn-In Time
+    input_frame.h3_row = 8        # Separator after parameters
+    
+    input_frame.doc_label_row = 9    # "Documentation" heading
+    input_frame.job_row = 10          # Job Number
+    input_frame.op_row = 11           # Operator
+    input_frame.comm_row = 12         # Comments
+    input_frame.h4_row = 13       # Separator before Run button
+    input_frame.run_row = 14      # Run button
+    input_frame.out_row = 15      # Output area
+
+    # Configure rows with more space
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], weight=1, minsize=35)
 
     # Define Automation1 Studio-inspired color palette
     BACKGROUND = "#F0F0F0"  # Light gray background
@@ -622,50 +636,52 @@ def UI():
     standard_padx = 10  # Keep the same
     standard_pady = 6   # Reduced from 8
 
-    # Test Type Selection
+    # Part Number section
     lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
     lbl_stage.grid(row=input_frame.ID_row, column=0, padx=standard_padx, pady=standard_pady)
 
-    part_entry = tk.Entry(input_frame, textvariable=part_number, width=20)
+    part_entry = tk.Entry(input_frame, textvariable=part_number, width=25, font=("Segoe UI", 9))
     part_entry.grid(row=input_frame.ID_row, column=1, padx=standard_padx, pady=standard_pady)
     part_entry.bind("<FocusIn>", on_entry_focus)
     part_entry.focus()
 
-    scan_button = tk.Button(input_frame, text="Configure", width=15, height=1, font=label_font, background="lightgray", command=on_scan)  # Changed text and font
+    scan_button = tk.Button(input_frame, text="Configure", width=15, height=1, font=label_font, command=on_scan)
     scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=standard_padx, pady=standard_pady)
 
-    lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", width=25, height=1, font=label_font)
+    # Configuration section
+    lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", font=label_font)
     lbl_num_axes.grid(row=input_frame.num_axes_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_num_axes = tk.IntVar(value="")
     ent_num_axes = tk.Entry(master=input_frame, textvariable=var_num_axes, width=15)
     ent_num_axes.grid(row=input_frame.num_axes_row, column=1, padx=standard_padx, pady=standard_pady)
     
-    lbl_abs = tk.Label(master=input_frame, text="Absolute Encoder?", width=25, height=1, font=label_font)
+    lbl_abs = tk.Label(master=input_frame, text="Absolute Encoder?", font=label_font)
     lbl_abs.grid(row=input_frame.num_axes_row, column=2, padx=standard_padx, pady=standard_pady)
     
     abs_var = tk.StringVar(value="No")
     abs_ent = tk.Radiobutton(master=input_frame, text="Yes", variable=abs_var, value="Yes", command=abs_def)
     abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=standard_padx, pady=standard_pady)
 
-    lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", width=25, height=1, font=label_font)
+    # Test Parameters section
+    lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_speed = tk.DoubleVar(value=speed_value)
     ent_speed = tk.Entry(master=input_frame, textvariable=var_speed, width=15)
     ent_speed.grid(row=input_frame.speed_row, column=1, padx=standard_padx, pady=standard_pady)
     
-    lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", width=25, height=1, font=label_font)
+    lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", font=label_font)
     lbl_duty_cycle.grid(row=input_frame.speed_row, column=2, padx=standard_padx, pady=standard_pady)
     
     var_duty_cycle = tk.DoubleVar(value=duty_cycle_value)
     ent_duty_cycle = tk.Entry(master=input_frame, textvariable=var_duty_cycle, width=15)
     ent_duty_cycle.grid(row=input_frame.speed_row, column=3, padx=standard_padx, pady=standard_pady)
     
-    lbl_cycles = tk.Label(master=input_frame, text="Burn-In Time", width=25, height=1, font=label_font)
+    lbl_cycles = tk.Label(master=input_frame, text="Burn-In Time", font=label_font)
     lbl_cycles.grid(row=input_frame.cycles_row, column=0, padx=standard_padx, pady=standard_pady)
     
-    time_var = tk.StringVar(value=0)
+    time_var = tk.StringVar(value="default")
     default = tk.Radiobutton(master=input_frame, text="Default", variable=time_var, value="default", command=time_def)
     default.grid(row=input_frame.cycles_row, column=1, padx=standard_padx, pady=standard_pady)
     
@@ -676,7 +692,7 @@ def UI():
     ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=15, state=tk.DISABLED)
     ent_other.grid(row=input_frame.cycles_row, column=3, padx=standard_padx, pady=standard_pady)
     
-    # Stage Serial Number Input
+    # Documentation section
     lbl_job = tk.Label(master=input_frame, text="Job Number", font=label_font)
     lbl_job.grid(row=input_frame.job_row, column=0, padx=standard_padx, pady=standard_pady)
     
@@ -684,7 +700,6 @@ def UI():
     ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=50)
     ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
     
-    # Operator Input
     lbl_op = tk.Label(master=input_frame, text="Operator", font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=standard_padx, pady=standard_pady)
     
@@ -692,32 +707,16 @@ def UI():
     ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=50)
     ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
     
-    # Comments Input
     lbl_comments = tk.Label(master=input_frame, text="Comments", font=label_font)
     lbl_comments.grid(row=input_frame.comm_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_comm = tk.StringVar(value=comm_value)
     ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=50)
     ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
-    
-    # Configure entry field styling
-    entry_style = {
-        "relief": "solid",
-        "borderwidth": 1,
-        "highlightthickness": 1,
-        "highlightbackground": BORDER,
-        "highlightcolor": BORDER,
-        "bg": WHITE,
-        "fg": TEXT_SECONDARY
-    }
 
-    # Apply entry style to all entry fields
-    for entry in [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_job, ent_op, ent_comments]:
-        entry.configure(**entry_style)
-
-    # Run and Open Plot Buttons
-    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, bg='lightgray', font=label_font)  # Updated font to match
-    btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
+    # Run button section
+    btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, font=label_font)
+    btn_run.grid(row=input_frame.run_row, column=1, columnspan=2, padx=standard_padx, pady=15)  # Increased pady for more space
     
 # =============================================================================
 #     btn_open = tk.Button(master=input_frame, text="Open Plot", width=25, height=1, command=open_Plot)
@@ -925,6 +924,37 @@ def UI():
         highlightthickness=1,
         bd=0
     )
+    
+    # Add section headers
+    section_font = font.Font(family="Segoe UI", size=9, weight="bold")
+    section_style = {
+        "bg": BACKGROUND,
+        "fg": TEXT_SECONDARY,
+        "font": section_font,
+        "pady": 5
+    }
+
+    lbl_config = tk.Label(master=input_frame, text="CONFIGURATION", **section_style)
+    lbl_config.grid(row=input_frame.config_label_row, column=0, columnspan=4, sticky='w', padx=standard_padx)
+
+    lbl_params = tk.Label(master=input_frame, text="TEST PARAMETERS", **section_style)
+    lbl_params.grid(row=input_frame.params_label_row, column=0, columnspan=4, sticky='w', padx=standard_padx)
+
+    lbl_doc = tk.Label(master=input_frame, text="DOCUMENTATION", **section_style)
+    lbl_doc.grid(row=input_frame.doc_label_row, column=0, columnspan=4, sticky='w', padx=standard_padx)
+
+    # Add all separators
+    sep1 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep1.grid(row=input_frame.h1_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep2 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep2.grid(row=input_frame.h2_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep3 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep3.grid(row=input_frame.h3_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    sep4 = tk.Frame(master=input_frame, height=1, bg=BORDER)
+    sep4.grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
     
     window.mainloop()
     
