@@ -60,6 +60,7 @@ absolute = False
 allocated_stations = []
 previously_allocated_stations = set()
 part_entry = None
+BI_state = 'default'  # Added global BI_state variable with default value
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
