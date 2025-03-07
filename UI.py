@@ -317,6 +317,8 @@ def UI():
     TEXT_PRIMARY = "#252423"  # Darker gray for primary text
     TEXT_SECONDARY = "#484644"  # Medium gray for secondary text
     BORDER = "#E1E1E1"  # Light border color
+    BORDER_DARK = "#CCCCCC"  # Darker border for frames
+    BORDER_FOCUS = "#0078D4"  # Blue border for focus
     DISABLED_BG = "#F3F2F1"  # Slightly darker than background for disabled
     DISABLED_FG = "#A19F9D"  # Muted text for disabled elements
 
@@ -785,11 +787,11 @@ def UI():
     
     # Entry field configurations
     entry_style = {
-        "relief": "solid",
-        "borderwidth": 1,
+        "relief": "flat",  # Changed from solid to flat
+        "borderwidth": 0,  # Changed from 1 to 0
         "highlightthickness": 1,
-        "highlightbackground": BORDER,
-        "highlightcolor": BORDER,
+        "highlightbackground": "#E1E1E1",  # Lighter gray border for unfocused entry fields
+        "highlightcolor": "#0078D4",      # Blue border for focus
         "bg": WHITE,
         "fg": TEXT_SECONDARY
     }
@@ -911,18 +913,20 @@ def UI():
         pady=8
     )
     
-    # Configure frames
+    # Configure frames with consistent borders
     input_frame.configure(
         bg=BACKGROUND,
-        highlightbackground=BORDER,
-        highlightthickness=1,
+        highlightbackground=BORDER_DARK,
+        highlightthickness=2,
+        highlightcolor=BORDER_DARK,  # Same as highlightbackground to prevent focus change
         bd=0
     )
     
     text_frame.configure(
         bg=BACKGROUND,
-        highlightbackground=BORDER,
-        highlightthickness=1,
+        highlightbackground=BORDER_DARK,
+        highlightthickness=2,
+        highlightcolor=BORDER_DARK,  # Same as highlightbackground to prevent focus change
         bd=0
     )
     
