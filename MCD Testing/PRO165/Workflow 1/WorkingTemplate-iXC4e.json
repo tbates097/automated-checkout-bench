@@ -1,0 +1,57 @@
+{
+  "MechanicalProducts": [
+    {
+      "Name": "PRO165",
+      "DeviceCatalogItemGuid": null,
+      "SecondaryDeviceCatalogItemGuid": null,
+      "DisplayName": "PRO165",
+      "SerialNumber": "",
+      "WasAutoDetected": false,
+      "ShouldExclude": false,
+      "ConfiguredOptions": {
+        "Direct Linear Feedback": "SL",
+        "Travel": "-100",
+        "Tabletop": "-TT1",
+        "Motor": "-M1",
+        "Foldback": "",
+        "Limits": "-LI1",
+        "Lifting Hardware": ""
+      },
+      "MechanicalAxes": []
+    }
+  ],
+  "ElectricalProducts": [
+    {
+      "Name": "iXC4e",
+      "DisplayName": "iXC4e",
+      "SerialNumber": "",
+      "WasAutoDetected": true,
+      "ShouldExclude": false,
+      "ConfiguredOptions": {
+        "Current": "-10",
+        "Bus Voltage": "160V",
+        "Expansion Board": "-EB0",
+        "Multiplier": "-MX1"
+      },
+      "ElectricalAxes": []
+    }
+  ],
+  "InterconnectedAxes": [
+    {
+      "Name": "X",
+      "Index": 0,
+      "MechanicalAxis": {
+        "DisplayName": "PRO165"
+      },
+      "ElectricalAxis": {
+        "DisplayName": "iXC4e"
+      }
+    }
+  ],
+  "Parameters": [],
+  "VersionInformation": {
+    "MachineSetupDataVersion": "2.11.0.3120",
+    "Automation1Version": "2.11.0.3100"
+  },
+  "ControllerType": "DriveBased"
+}

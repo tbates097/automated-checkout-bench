@@ -1,0 +1,31 @@
+Initializing Aerotech Controller...
+Loading .NET Assemblies...
+Assemblies loaded successfully.
+Loading required types...
+Types loaded successfully.
+Controller initialized successfully.
+
+--- Starting Workflow 1: JSON -> Calculated MCD ---
+
+Converting specs to initial MCD object...
+Configuration updated in C:\Users\tbates\Python\automated-checkout-bench\test drive working.json
+Initial conversion complete.
+
+Calculating parameters...
+
+An error occurred: Exception has been thrown by the target of an invocation.
+ ---> System.ArgumentException: The provided Machine Controller Definition does not contain a valid Machine Setup configuration. (Parameter 'mcd')
+   at Aerotech.Automation1.Applications.Wpf.McdFormatConverter.CalculateParameters(MachineControllerDefinition mcd, List`1& warnings)
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+   --- End of inner exception stack trace ---
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Reflection.MethodBase.Invoke(Object obj, Object[] parameters)
+   at InvokeStub_MethodBase.Invoke(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+Inner Exception: The provided Machine Controller Definition does not contain a valid Machine Setup configuration. (Parameter 'mcd')
+   at Aerotech.Automation1.Applications.Wpf.McdFormatConverter.CalculateParameters(MachineControllerDefinition mcd, List`1& warnings)
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)

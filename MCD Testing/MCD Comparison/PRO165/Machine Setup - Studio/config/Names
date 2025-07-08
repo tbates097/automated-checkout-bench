@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<File SchemaVersion="1.0.0.0">
+	<FileInformation>
+		<SoftwareVersion>2.10.2.3124</SoftwareVersion>
+		<OldestCompatibleSoftwareVersion>1.0.0.0</OldestCompatibleSoftwareVersion>
+	</FileInformation>
+	<Data>
+		<ControllerName>PRO XY</ControllerName>
+	</Data>
+</File>

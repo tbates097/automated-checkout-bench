@@ -1,0 +1,280 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<File SchemaVersion="1.0.0.0">
+	<FileInformation>
+		<SoftwareVersion>2.10.2.3124</SoftwareVersion>
+		<OldestCompatibleSoftwareVersion>1.0.0.0</OldestCompatibleSoftwareVersion>
+	</FileInformation>
+	<Data>
+		<Parameters>
+			<System>
+				<P id="278" n="EnabledTasks">3</P>
+			</System>
+			<Axes>
+				<Axis Index="0">
+					<P id="67" n="AbortDecelRate">1100</P>
+					<P id="29" n="AverageCurrentThreshold">2.0996442</P>
+					<P id="0" n="AxisName">X</P>
+					<P id="532" n="BusOvervoltageThreshold">400</P>
+					<P id="4" n="CountsPerUnit">2000</P>
+					<P id="540" n="CurrentLoopFeedforwardBackEmf">34</P>
+					<P id="541" n="CurrentLoopFeedforwardBusVoltage">160</P>
+					<P id="539" n="CurrentLoopFeedforwardGainLff">3.4</P>
+					<P id="538" n="CurrentLoopFeedforwardGainRff">13.6</P>
+					<P id="21" n="CurrentLoopGainK">1300</P>
+					<P id="20" n="CurrentLoopGainKi">3900</P>
+					<P id="398" n="CurrentLoopSetup">32</P>
+					<P id="66" n="DefaultAxisRampRate">1000</P>
+					<P id="177" n="DefaultAxisRampTime">0.1</P>
+					<P id="65" n="DefaultAxisSpeed">40</P>
+					<P id="55" n="EndOfTravelLimitSetup">6</P>
+					<P id="22" n="FaultMask">1355157503</P>
+					<P id="44" n="FeedbackInput0">1</P>
+					<P id="46" n="FeedbackInput1">1</P>
+					<P id="390" n="FeedforwardAdvance">0.5</P>
+					<P id="463" n="FeedforwardFilter00CoeffD1">-1.564504</P>
+					<P id="464" n="FeedforwardFilter00CoeffD2">0.64366233</P>
+					<P id="460" n="FeedforwardFilter00CoeffN0">0.019789582</P>
+					<P id="461" n="FeedforwardFilter00CoeffN1">0.039579164</P>
+					<P id="462" n="FeedforwardFilter00CoeffN2">0.019789582</P>
+					<P id="499" n="FeedforwardFilterSetup">1</P>
+					<P id="7" n="FeedforwardGainAff">64.2</P>
+					<P id="396" n="FeedforwardGainJff">0</P>
+					<P id="496" n="FeedforwardGainNormalizationFactor">635607025.674287</P>
+					<P id="346" n="FeedforwardGainPff">0</P>
+					<P id="537" n="FeedforwardGainSff">0</P>
+					<P id="6" n="FeedforwardGainVff">0</P>
+					<P id="72" n="HomeRampRate">500</P>
+					<P id="70" n="HomeSpeed">40</P>
+					<P id="36" n="InPositionDistance">0.0025</P>
+					<P id="109" n="JoystickHighSpeed">80</P>
+					<P id="108" n="JoystickLowSpeed">40</P>
+					<P id="81" n="LimitDebounceDistance">5</P>
+					<P id="53" n="LimitDecelDistance">4.7</P>
+					<P id="35" n="MaxCurrentClamp">8.540925</P>
+					<P id="92" n="MaxJogSpeed">40</P>
+					<P id="205" n="MaxSpeedClamp">300</P>
+					<P id="500" n="MotorPolePitch">8</P>
+					<P id="37" n="MotorType">1</P>
+					<P id="28" n="PositionErrorThreshold">0.25</P>
+					<P id="501" n="PrimaryFeedbackResolution">10000</P>
+					<P id="43" n="PrimaryFeedbackType">1</P>
+					<P id="12" n="ServoLoopFilter00CoeffD1">-1.7790823</P>
+					<P id="13" n="ServoLoopFilter00CoeffD2">0.80116713</P>
+					<P id="9" n="ServoLoopFilter00CoeffN0">0.0055211945</P>
+					<P id="10" n="ServoLoopFilter00CoeffN1">0.011042389</P>
+					<P id="11" n="ServoLoopFilter00CoeffN2">0.0055211945</P>
+					<P id="17" n="ServoLoopFilter01CoeffD1">0</P>
+					<P id="18" n="ServoLoopFilter01CoeffD2">0</P>
+					<P id="14" n="ServoLoopFilter01CoeffN0">1</P>
+					<P id="15" n="ServoLoopFilter01CoeffN1">0</P>
+					<P id="16" n="ServoLoopFilter01CoeffN2">0</P>
+					<P id="85" n="ServoLoopFilter02CoeffD1">0</P>
+					<P id="86" n="ServoLoopFilter02CoeffD2">0</P>
+					<P id="82" n="ServoLoopFilter02CoeffN0">1</P>
+					<P id="83" n="ServoLoopFilter02CoeffN1">0</P>
+					<P id="84" n="ServoLoopFilter02CoeffN2">0</P>
+					<P id="90" n="ServoLoopFilter03CoeffD1">0</P>
+					<P id="91" n="ServoLoopFilter03CoeffD2">0</P>
+					<P id="87" n="ServoLoopFilter03CoeffN0">1</P>
+					<P id="88" n="ServoLoopFilter03CoeffN1">0</P>
+					<P id="89" n="ServoLoopFilter03CoeffN2">0</P>
+					<P id="185" n="ServoLoopFilter04CoeffD1">0</P>
+					<P id="186" n="ServoLoopFilter04CoeffD2">0</P>
+					<P id="182" n="ServoLoopFilter04CoeffN0">1</P>
+					<P id="183" n="ServoLoopFilter04CoeffN1">0</P>
+					<P id="184" n="ServoLoopFilter04CoeffN2">0</P>
+					<P id="190" n="ServoLoopFilter05CoeffD1">0</P>
+					<P id="191" n="ServoLoopFilter05CoeffD2">0</P>
+					<P id="187" n="ServoLoopFilter05CoeffN0">1</P>
+					<P id="188" n="ServoLoopFilter05CoeffN1">0</P>
+					<P id="189" n="ServoLoopFilter05CoeffN2">0</P>
+					<P id="486" n="ServoLoopGainK">12.2</P>
+					<P id="484" n="ServoLoopGainKip">8.97</P>
+					<P id="483" n="ServoLoopGainKip2">0</P>
+					<P id="487" n="ServoLoopGainKiv">17.9</P>
+					<P id="485" n="ServoLoopGainKpv">1</P>
+					<P id="383" n="ServoLoopGainKsi1">0</P>
+					<P id="384" n="ServoLoopGainKsi2">0</P>
+					<P id="8" n="ServoLoopGainKv">1</P>
+					<P id="489" n="ServoLoopGainNormalizationFactor">635607.025674287</P>
+					<P id="95" n="UnitsName">mm</P>
+					<P id="32" n="VelocityErrorThreshold">30</P>
+				</Axis>
+				<Axis Index="1">
+					<P id="67" n="AbortDecelRate">1100</P>
+					<P id="401" n="AuxiliaryEncoderCosineGain">1.014228</P>
+					<P id="402" n="AuxiliaryEncoderCosineOffset">0.37810844</P>
+					<P id="406" n="AuxiliaryEncoderPhase">-0.08640264</P>
+					<P id="407" n="AuxiliaryEncoderSineGain">1.0324553</P>
+					<P id="408" n="AuxiliaryEncoderSineOffset">-3.434746</P>
+					<P id="45" n="AuxiliaryFeedbackType">0</P>
+					<P id="29" n="AverageCurrentThreshold">4.197731</P>
+					<P id="0" n="AxisName">Y</P>
+					<P id="532" n="BusOvervoltageThreshold">400</P>
+					<P id="4" n="CountsPerUnit">50000</P>
+					<P id="540" n="CurrentLoopFeedforwardBackEmf">21.28</P>
+					<P id="541" n="CurrentLoopFeedforwardBusVoltage">160</P>
+					<P id="539" n="CurrentLoopFeedforwardGainLff">1.33</P>
+					<P id="538" n="CurrentLoopFeedforwardGainRff">4.8</P>
+					<P id="21" n="CurrentLoopGainK">590</P>
+					<P id="20" n="CurrentLoopGainKi">3200</P>
+					<P id="398" n="CurrentLoopSetup">32</P>
+					<P id="66" n="DefaultAxisRampRate">1000</P>
+					<P id="177" n="DefaultAxisRampTime">0.1</P>
+					<P id="65" n="DefaultAxisSpeed">80</P>
+					<P id="55" n="EndOfTravelLimitSetup">6</P>
+					<P id="22" n="FaultMask">1355157503</P>
+					<P id="44" n="FeedbackInput0">1</P>
+					<P id="46" n="FeedbackInput1">1</P>
+					<P id="390" n="FeedforwardAdvance">0.5</P>
+					<P id="463" n="FeedforwardFilter00CoeffD1">-1.564504</P>
+					<P id="464" n="FeedforwardFilter00CoeffD2">0.64366233</P>
+					<P id="460" n="FeedforwardFilter00CoeffN0">0.019789582</P>
+					<P id="461" n="FeedforwardFilter00CoeffN1">0.039579164</P>
+					<P id="462" n="FeedforwardFilter00CoeffN2">0.019789582</P>
+					<P id="499" n="FeedforwardFilterSetup">1</P>
+					<P id="7" n="FeedforwardGainAff">2.5</P>
+					<P id="396" n="FeedforwardGainJff">0</P>
+					<P id="496" n="FeedforwardGainNormalizationFactor">925500000</P>
+					<P id="346" n="FeedforwardGainPff">0</P>
+					<P id="537" n="FeedforwardGainSff">0</P>
+					<P id="6" n="FeedforwardGainVff">0</P>
+					<P id="72" n="HomeRampRate">500</P>
+					<P id="70" n="HomeSpeed">50</P>
+					<P id="36" n="InPositionDistance">0.0001</P>
+					<P id="109" n="JoystickHighSpeed">160</P>
+					<P id="108" n="JoystickLowSpeed">80</P>
+					<P id="53" n="LimitDecelDistance">4</P>
+					<P id="35" n="MaxCurrentClamp">20</P>
+					<P id="92" n="MaxJogSpeed">80</P>
+					<P id="205" n="MaxSpeedClamp">2000</P>
+					<P id="500" n="MotorPolePitch">25</P>
+					<P id="37" n="MotorType">0</P>
+					<P id="28" n="PositionErrorThreshold">0.25</P>
+					<P id="47" n="PrimaryEncoderMultiplicationFactor">1000</P>
+					<P id="501" n="PrimaryFeedbackResolution">0.02</P>
+					<P id="43" n="PrimaryFeedbackType">2</P>
+					<P id="12" n="ServoLoopFilter00CoeffD1">-1.564504</P>
+					<P id="13" n="ServoLoopFilter00CoeffD2">0.64366233</P>
+					<P id="9" n="ServoLoopFilter00CoeffN0">0.019789582</P>
+					<P id="10" n="ServoLoopFilter00CoeffN1">0.039579164</P>
+					<P id="11" n="ServoLoopFilter00CoeffN2">0.019789582</P>
+					<P id="17" n="ServoLoopFilter01CoeffD1">0</P>
+					<P id="18" n="ServoLoopFilter01CoeffD2">0</P>
+					<P id="14" n="ServoLoopFilter01CoeffN0">1</P>
+					<P id="15" n="ServoLoopFilter01CoeffN1">0</P>
+					<P id="16" n="ServoLoopFilter01CoeffN2">0</P>
+					<P id="486" n="ServoLoopGainK">0.474</P>
+					<P id="484" n="ServoLoopGainKip">8.97</P>
+					<P id="483" n="ServoLoopGainKip2">0</P>
+					<P id="487" n="ServoLoopGainKiv">17.9</P>
+					<P id="485" n="ServoLoopGainKpv">1</P>
+					<P id="383" n="ServoLoopGainKsi1">0</P>
+					<P id="384" n="ServoLoopGainKsi2">0</P>
+					<P id="8" n="ServoLoopGainKv">1</P>
+					<P id="489" n="ServoLoopGainNormalizationFactor">925500</P>
+					<P id="95" n="UnitsName">mm</P>
+					<P id="32" n="VelocityErrorThreshold">200</P>
+				</Axis>
+				<Axis Index="2">
+					<P id="0" n="AxisName">Z</P>
+				</Axis>
+				<Axis Index="3">
+					<P id="0" n="AxisName">U</P>
+				</Axis>
+				<Axis Index="4">
+					<P id="0" n="AxisName">A</P>
+				</Axis>
+				<Axis Index="5">
+					<P id="0" n="AxisName">B</P>
+				</Axis>
+				<Axis Index="6">
+					<P id="0" n="AxisName">C</P>
+				</Axis>
+				<Axis Index="7">
+					<P id="0" n="AxisName">D</P>
+				</Axis>
+				<Axis Index="8">
+					<P id="0" n="AxisName">x</P>
+				</Axis>
+				<Axis Index="9">
+					<P id="0" n="AxisName">y</P>
+				</Axis>
+				<Axis Index="10">
+					<P id="0" n="AxisName">z</P>
+				</Axis>
+				<Axis Index="11">
+					<P id="0" n="AxisName">u</P>
+				</Axis>
+			</Axes>
+			<Tasks>
+				<Task Index="1">
+					<P id="1" n="TaskName">Task 1</P>
+				</Task>
+				<Task Index="2">
+					<P id="223" n="CoordinatedAccelLimitSetup">0</P>
+					<P id="247" n="CoordinatedMoveDurationMinimum">0</P>
+					<P id="227" n="CutterTolerance">0.5</P>
+					<P id="220" n="DefaultCoordinatedAccelLimit">0</P>
+					<P id="222" n="DefaultCoordinatedCircularAccelLimit">0</P>
+					<P id="174" n="DefaultCoordinatedRampMode">0</P>
+					<P id="115" n="DefaultCoordinatedRampRate">500</P>
+					<P id="175" n="DefaultCoordinatedRampTime">0.5</P>
+					<P id="268" n="DefaultCoordinatedRampType">2</P>
+					<P id="74" n="DefaultCoordinatedSCurvePercentage">50</P>
+					<P id="114" n="DefaultCoordinatedSpeed">50</P>
+					<P id="221" n="DefaultDependentCoordinatedAccelLimit">0</P>
+					<P id="116" n="DefaultDependentCoordinatedRampRate">3600</P>
+					<P id="219" n="DefaultDependentCoordinatedSpeed">360</P>
+					<P id="272" n="DefaultSpindleSpeed">360</P>
+					<P id="248" n="DefaultTaskMotionMode">1</P>
+					<P id="267" n="DefaultTaskTargetMode">0</P>
+					<P id="349" n="DefaultTaskTimeUnits">0</P>
+					<P id="73" n="DefaultTaskWaitMode">3</P>
+					<P id="246" n="ExecuteNumLines">1</P>
+					<P id="412" n="ExecuteNumLinesAfterMove">8</P>
+					<P id="228" n="FeedholdInput">0</P>
+					<P id="229" n="FeedholdSetup">0</P>
+					<P id="251" n="JoystickAxesSelect">0</P>
+					<P id="249" n="JoystickInput0">0</P>
+					<P id="107" n="JoystickInput0Deadband">0.1</P>
+					<P id="106" n="JoystickInput0MaxVoltage">5</P>
+					<P id="105" n="JoystickInput0MinVoltage">0</P>
+					<P id="250" n="JoystickInput1">0</P>
+					<P id="104" n="JoystickInput1Deadband">0.1</P>
+					<P id="103" n="JoystickInput1MaxVoltage">5</P>
+					<P id="102" n="JoystickInput1MinVoltage">0</P>
+					<P id="254" n="JoystickInput2">0</P>
+					<P id="260" n="JoystickInput2Deadband">0.1</P>
+					<P id="259" n="JoystickInput2MaxVoltage">5</P>
+					<P id="258" n="JoystickInput2MinVoltage">0</P>
+					<P id="253" n="JoystickInterlock">0</P>
+					<P id="252" n="JoystickSpeedSelect">0</P>
+					<P id="224" n="MaxLookaheadMoves">100</P>
+					<P id="411" n="MaxRetraceMoves">0</P>
+					<P id="230" n="MfoAnalogInput">0</P>
+					<P id="256" n="MfoAnalogMaxVoltage">10</P>
+					<P id="255" n="MfoAnalogMinVoltage">-10</P>
+					<P id="262" n="MfoAnalogStep">5</P>
+					<P id="257" n="MfoMaximum">200</P>
+					<P id="261" n="MfoMinimum">0</P>
+					<P id="332" n="MotionInterpolationMode">0</P>
+					<P id="245" n="MotionUpdateRate">1</P>
+					<P id="225" n="RadiusCorrectionThreshold">0.05</P>
+					<P id="226" n="RadiusErrorThreshold">5</P>
+					<P id="235" n="SpindleAxis">-1</P>
+					<P id="231" n="SpindleMsoInput">0</P>
+					<P id="481" n="StackSize">4096</P>
+					<P id="480" n="StringStackSize">512</P>
+					<P id="94" n="TaskErrorAbortAxes">0</P>
+					<P id="549" n="TaskIntegers">256</P>
+					<P id="1" n="TaskName">Task 2</P>
+					<P id="548" n="TaskReals">256</P>
+					<P id="112" n="TaskStopAbortAxes">0</P>
+					<P id="550" n="TaskStrings">32</P>
+					<P id="111" n="TaskTerminationAxes">0</P>
+				</Task>
+			</Tasks>
+		</Parameters>
+	</Data>
+</File>

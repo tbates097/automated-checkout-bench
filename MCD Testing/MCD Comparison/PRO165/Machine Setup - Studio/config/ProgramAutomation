@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<File SchemaVersion="1.0.0.0">
+	<FileInformation>
+		<SoftwareVersion>2.10.0.3036</SoftwareVersion>
+		<OldestCompatibleSoftwareVersion>1.0.0.0</OldestCompatibleSoftwareVersion>
+	</FileInformation>
+	<Data>
+		<Programs />
+		<Libraries />
+		<SourceFiles>
+			<SourceFile>
+				<Path>/MPGStaticInclude.ascript</Path>
+			</SourceFile>
+			<SourceFile>
+				<Path>/MPGEditInclude.ascript</Path>
+			</SourceFile>
+		</SourceFiles>
+	</Data>
+</File>

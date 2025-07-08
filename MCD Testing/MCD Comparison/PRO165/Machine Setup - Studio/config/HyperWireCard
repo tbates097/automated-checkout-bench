@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<File SchemaVersion="1.0.0.0">
+	<FileInformation>
+		<SoftwareVersion>2.9.2.2978</SoftwareVersion>
+		<OldestCompatibleSoftwareVersion>1.0.0.0</OldestCompatibleSoftwareVersion>
+	</FileInformation>
+	<Data>
+		<Mode>AutoDetect</Mode>
+	</Data>
+</File>

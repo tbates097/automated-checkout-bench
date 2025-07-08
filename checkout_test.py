@@ -24,13 +24,13 @@ from station_manager import StationManager
 from station_manager_instance import get_station_manager
 from exceptions import TestSequenceAbort
 from BurnIn import burn_in
-from MCDComparison import MCDComparison
+from GenerateMCD import AerotechController
 
 #sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults
-from sheets_update import Sheets
+from sheets_update import Sheets, Checkout_Sheet
 #from RedirectStdout import RedirectStdout
 
 _thread_lock = threading.Lock()
@@ -223,6 +223,7 @@ class stage_checkout():
         Reset sys.stdout to its original value.
         """
         sys.stdout = sys.__stdout__
+
     def get_limit_dec(self, controller, axis, limit=None):
         # Retrieve the current configuration for the axis
         electrical_limits = controller.runtime.parameters.axes[axis].protection.faultmask
@@ -245,6 +246,7 @@ class stage_checkout():
             electrical_limit_value &= ~((1 << CCW_ELECTRICAL_LIMIT) | (1 << CW_ELECTRICAL_LIMIT))
 
         return electrical_limit_value
+
     def get_spec_value(self, spec_key):
         """
         Get a numerical value from specs_dict, handling both float and string formats.
@@ -347,7 +349,7 @@ class stage_checkout():
         self.station_print(f"Starting test for {self.job}.", station_id=station_id)
         self.data = {}
         for axis in self.test_axes:
-            self.data[f"Axis: {axis}"] = {
+            self.data[axis] = {
                 "Testing Technician": "",
                 "Date of Testing": "",
                 "Halls": "",
@@ -373,8 +375,8 @@ class stage_checkout():
         
         # Set the nominal positions and velocities for each axis
         for axis in self.test_axes:
-            self.data[f"Axis: {axis}"]["Testing Technician"] = self.op
-            self.data[f"Axis: {axis}"]["Date of Testing"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.data[axis]["Testing Technician"] = self.op
+            self.data[axis]["Date of Testing"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
                 nominal_travel = self.get_spec_value('NominalTravel')
                 self.list_commands_ccw_pos.append(nominal_travel / 2 * -1)
@@ -395,20 +397,17 @@ class stage_checkout():
         self.mdk_path = fr'C:\Users\tbates\Documents\Automation1\{self.stage_type}.mcd'
 
         # Configure initial parameters for each axis
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        AEROTECH_DLL_PATH = os.path.join(base_dir, "extern", "Automation1")
+        CONFIG_MANAGER_PATH = os.path.join(base_dir, "System.Configuration.ConfigurationManager.8.0.0", "lib", "netstandard2.0")
+
         for axis in self.test_axes:
             controller = self.station_controllers[axis]
-            mcd_comparison = MCDComparison(self.stage_type, controller, self.window)
-            mcd_comparison.compare_mcd_files()
-            json_path = 'parameters_comparison.json'
-
-            with open(json_path, 'r') as file:
-                data = json.load(file)
-            self.load_new_params(controller, data, axis)
-            if self.absolute:
-                self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical off')
-            else:
-                self.params(controller, axis, home_offset=self.zero_home_offset, current_clamp=self.max_current_clamp, limit='electrical on', home_setup=1)
-
+            mcd = AerotechController(AEROTECH_DLL_PATH, CONFIG_MANAGER_PATH)
+            new_mcd = mcd.calculate_parameters(self.stage_type, self.axis, self.specs_dict)
+            
+            print(f"Loading new parameters for axis {axis} from MCD: {new_mcd}")
+        time.sleep(300)
         try:
             try:
                 # Reset all controllers in parallel
@@ -473,8 +472,25 @@ class stage_checkout():
                                 self.stage_log_file
                             )
                         BI.initialize_burnin(self.station_controllers)
-                        populate_sheet = Sheets(self.job, self.data)
-                        populate_sheet.populate_sheet()
+
+                        for axis in self.test_axes:
+                            # Create per-axis data dictionary
+                            axis_data = {
+                                "Testing Technician": self.data[axis]["Testing Technician"],
+                                "Date of Testing": self.data[axis]["Date of Testing"],
+                                "Halls": self.data[axis]["Halls"],
+                                "Marker": self.data[axis]["Marker"],
+                                "Limits": self.data[axis]["Limits"],
+                                "Total Travel": self.data[axis]["Total Travel"],
+                                "Home Marker from Limit": self.data[axis]["Home Marker from Limit"],
+                                "Home Offset": self.data[axis]["Home Offset"],
+                                "Absolute value at CCW EOT": self.data[axis]["Absolute value at CCW EOT"],
+                                "Absolute Position Offset": self.data[axis]["Absolute Position Offset"]
+                                }
+                            checkout_sheet = Checkout_Sheet(self.job, self.data)
+                            checkout_sheet.duplicate_sheet()
+                            checkout_sheet.populate_sheet()
+
                         time.sleep(5)
                         self.home_stages()
                     except TestSequenceAbort:
@@ -535,9 +551,24 @@ class stage_checkout():
                     except TestSequenceAbort:
                         raise
                     try:    
-                        print(f'Data To Sheet: {self.data}')
-                        populate_sheet = Sheets(self.job, self.data)
-                        populate_sheet.populate_sheet()
+                        for axis in self.test_axes:
+                            # Create per-axis data dictionary
+                            axis_data = {
+                                "Testing Technician": self.data[axis]["Testing Technician"],
+                                "Date of Testing": self.data[axis]["Date of Testing"],
+                                "Halls": self.data[axis]["Halls"],
+                                "Marker": self.data[axis]["Marker"],
+                                "Limits": self.data[axis]["Limits"],
+                                "Total Travel": self.data[axis]["Total Travel"],
+                                "Home Marker from Limit": self.data[axis]["Home Marker from Limit"],
+                                "Home Offset": self.data[axis]["Home Offset"],
+                                "Absolute value at CCW EOT": self.data[axis]["Absolute value at CCW EOT"],
+                                "Absolute Position Offset": self.data[axis]["Absolute Position Offset"]
+                                }
+                            checkout_sheet = Checkout_Sheet(self.job, self.data)
+                            checkout_sheet.duplicate_sheet()
+                            checkout_sheet.populate_sheet()
+                        
                     except TestSequenceAbort:
                         raise
                     try:
@@ -1124,7 +1155,7 @@ class stage_checkout():
             ccw_pos_fbk = results.axis.get(a1.AxisStatusItem.PositionFeedback, axis).value
             
             self.stage_info.info(f'Ccw Hardstop position for {axis} is {ccw_pos_fbk}')
-            self.data[f"Axis: {axis}"]["Absolute value at CCW EOT"] = ccw_pos_fbk
+            self.data[axis]["Absolute value at CCW EOT"] = ccw_pos_fbk
             self.abs_ccw_positions[axis] = ccw_pos_fbk
 
         # Move to CW hardstop
@@ -1176,7 +1207,7 @@ class stage_checkout():
                 
                 self.midpoints[axis] = midpoint
                 self.stage_info.info(f'The absolute feedback offset for {axis} is {midpoint}')
-                self.data[f"Axis: {axis}"]["Absolute Position Offset"] = midpoint
+                self.data[axis]["Absolute Position Offset"] = midpoint
 
                 # Configure the axis
                 configured_parameters = controller.configuration.parameters.get_configuration()
@@ -1194,7 +1225,7 @@ class stage_checkout():
                 ccw_pos = limits.get('Ccw', 0)
                 midpoint = (ccw_pos + cw_pos) / 2
                 self.midpoints[axis] = midpoint
-                self.data[f"Axis: {axis}"]["Home Offset"] = round(midpoint, 4)
+                self.data[axis]["Home Offset"] = round(midpoint, 4)
 
                 configured_parameters = controller.configuration.parameters.get_configuration()
                 configured_parameters.axes[axis].homing.homeoffset.value = midpoint
@@ -1298,7 +1329,7 @@ class stage_checkout():
                         self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
                         time.sleep(2)
                     # Update marker status
-                    self.data[f"Axis: {axis}"]["Marker"] = "Passed"
+                    self.data[axis]["Marker"] = "Passed"
                     
                 else:
                     # Move to absolute zero position
@@ -1720,7 +1751,7 @@ class stage_checkout():
             for i, bit in enumerate(self.ccw_fault[axis]):  # Access axis-specific data
                 if bit == 1:
                     end_position = position_feedback[i]
-                    self.data[f"Axis: {axis}"]["Home Marker to Limit"] = round(end_position, 4)
+                    self.data[axis]["Home Marker to Limit"] = round(end_position, 4)
                     break
         else:
             # Combine signals into a dictionary for logging
@@ -1847,7 +1878,7 @@ class stage_checkout():
                     else:
                         self.station_print("Continuing despite limit travel failure.", station_id=station_id)
                 else:
-                    self.data[f"Axis: {axis}"]["Limits"] = 'Passed'
+                    self.data[axis]["Limits"] = 'Passed'
 
                 # Check hardstop travel
                 if hardstop_distance < hardstop_spec:
@@ -1887,7 +1918,7 @@ class stage_checkout():
                         self.station_print("Continuing despite hardstop travel failure.", station_id=station_id)
 
                 # If we get here, the axis passed both checks
-                self.data[f"Axis: {axis}"]["Total Travel"] = limit_distance
+                self.data[axis]["Total Travel"] = limit_distance
                 #self.station_print(f'Axis {axis}: CCW Limit Position = {ccw_limit_position}, CW Limit Position = {cw_limit_position}, Limit Distance = {limit_distance}', station_id=station_id)
                 #self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
                 self.log_only(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}', station_id=station_id)
@@ -2049,7 +2080,7 @@ class stage_checkout():
         if hall_order_valid:
             self.station_print(f'Hall states for {axis} are in the correct order.', station_id=station_id)
             self.log_only(f'Hall states for {axis} are in the correct order.')
-            self.data[f"Axis: {axis}"]["Halls"] = "Passed"
+            self.data[axis]["Halls"] = "Passed"
         else:
             self.station_print(f'Hall states for {axis} are NOT in the correct order:', station_id=station_id)
             self.station_print(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
@@ -2057,7 +2088,7 @@ class stage_checkout():
             self.log_only(f'Hall states for {axis} are NOT in the correct order.', station_id=station_id)
             self.log_only(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
             self.log_only(f'Observed states: {unique_hall_states}', station_id=station_id)
-            self.data[f"Axis: {axis}"]["Halls"] = "Failed"
+            self.data[axis]["Halls"] = "Failed"
 
             self.station_print("Please address hall issues before continuing.", station_id=station_id)
             # Release the station and remove from testing

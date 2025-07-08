@@ -5,13 +5,6 @@ Created on Tue Sep 24 15:15:54 2024
 @author: TBates
 """
 
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Sep 24 13:09:21 2024
-
-@author: TBates
-"""
-
 import os
 import sys
 import tkinter as tk
@@ -597,13 +590,17 @@ def UI():
             app = QApplication([])
         app_instance = App()
         try:
-            stage_spec_names, stage_spec_vals, smart_string = app_instance.show_popup_config_dialog(stage=part_entry.get())
+            config_selections = app_instance.show_popup_config_dialog(stage=part_entry.get())
+            print("Stage Configuration Selections:", config_selections)
         except TypeError:
             app.quit()
             return
-        if stage_spec_names and stage_spec_vals:
+        if config_selections:
+            specs_dict = config_selections
+        #if stage_spec_names and stage_spec_vals:
             # Create a dictionary by zipping the two lists
-            specs_dict = dict(zip(stage_spec_names, stage_spec_vals))
+            #specs_dict = dict(zip(stage_spec_names, stage_spec_vals))
+
         else:
             print("No stage specifications found.")
 

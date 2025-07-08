@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<File SchemaVersion="1.0">
+  <FileInformation>
+    <SoftwareVersion>2.10.2.3124</SoftwareVersion>
+    <OldestCompatibleSoftwareVersion>2.0.0.0</OldestCompatibleSoftwareVersion>
+  </FileInformation>
+  <Data>
+    <GeneratedAxes>
+<ArrayOfInt xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <int>0</int>
+</ArrayOfInt></GeneratedAxes>
+    <AxisItems>
+<ArrayOfAxisChecklistItem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>EasyTune</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>Faults</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>Homing</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>Limits</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>Rates</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>Thresholds</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>MotorPhasing</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+  <AxisChecklistItem>
+    <SystemConfigurationOperation>ManualSignalVerification</SystemConfigurationOperation>
+    <AxisIndex>0</AxisIndex>
+    <IsComplete>false</IsComplete>
+  </AxisChecklistItem>
+</ArrayOfAxisChecklistItem></AxisItems>
+  </Data>
+</File>

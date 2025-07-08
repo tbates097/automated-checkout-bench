@@ -1,0 +1,391 @@
+{
+  "MechanicalProducts": [
+    {
+      "Name": "PRO165LM",
+      "DeviceCatalogItemGuid": null,
+      "SecondaryDeviceCatalogItemGuid": null,
+      "DisplayName": "PRO165LM",
+      "SerialNumber": "",
+      "WasAutoDetected": false,
+      "ShouldExclude": false,
+      "ConfiguredOptions": {
+        "Travel": "-0100",
+        "Feedback": "-E1",
+        "Cable Management": "-CMS2"
+      },
+      "MechanicalAxes": [
+        {
+          "DisplayName": "PRO165LM",
+          "Stage": {
+            "Name": "PRO165LM",
+            "IsCustom": false,
+            "DefaultSpeed": 80.0,
+            "LimitDecelDistance": 4.0,
+            "DefaultRampRate": 1000.0,
+            "ThermistorAvailable": true,
+            "HomeSpeed": 50.0,
+            "HomeRampRate": 500.0,
+            "MaxSpeed": 2000.0,
+            "LowPassFilterParams.CutoffFrequency": "1000",
+            "Type": "LinearStageComponent",
+            "CarriageMass": 2.6,
+            "LoadMass": 0.0,
+            "MotorCurrentDerateFactor": 1.0,
+            "WedgeRatio": 1.0,
+            "MotorCount": 1,
+            "LimitType": "Switch",
+            "LimitPolarity": "NormallyClosed",
+            "EndOfTravelCurrentThreshold": 0.0,
+            "NominalTravel": 100.0
+          },
+          "Motor": {
+            "Name": "BLMC",
+            "MotorType": "Linear",
+            "IsCustom": false,
+            "Resistance": 4.8,
+            "Inductance": 1.33,
+            "PeakForce": 481.2,
+            "ContinuousForce": 77.7,
+            "ForceConstant": 18.51,
+            "PolePitch": 25.0,
+            "CoilMass": 0.26,
+            "BackEMFConstant": 21.28,
+            "HasHallEffectSwitches": true,
+            "RequiresCommutation": true,
+            "CommutationOffset": 0.0
+          },
+          "PrimaryFeedback": {
+            "Name": "Standard",
+            "IsCustom": false,
+            "FeedbackSource": "Motor",
+            "DeviceType": "IncrementalSineWaveEncoder",
+            "DeviceOrientation": "Linear",
+            "Resolution": 20.0,
+            "MultiplicationFactor": 1000.0,
+            "MicrostepsPerStep": 0,
+            "Flags": "None",
+            "AbsoluteEncoderBits": 1,
+            "EnDatEncoderTurns": 1,
+            "EnDatEncoderProtocolVersion": "EnDat21",
+            "BissEncoderTurns": 1,
+            "AbsoluteEncoderIncrementalResolution": 20.0
+          },
+          "NominalTravel": 100.0
+        }
+      ],
+      "GalvoScannerOrientation": null
+    }
+  ],
+  "ElectricalProducts": [
+    {
+      "Name": "iXC4e",
+      "DisplayName": "iXC4e",
+      "SerialNumber": "449955-3",
+      "WasAutoDetected": true,
+      "ShouldExclude": false,
+      "ConfiguredOptions": {
+        "Current": "-10",
+        "Bus Voltage": "160V",
+        "Expansion Board": "-EB0",
+        "Multiplier": "-MX2"
+      },
+      "ElectricalAxes": [
+        {
+          "DisplayName": "iXC4e",
+          "HyperWireCommunicationChannel": 0,
+          "Drive": {
+            "Type": "XC4e",
+            "BusVoltage": 160.0,
+            "HasBipolarBusVoltage": false,
+            "PeakCurrent": 10.0,
+            "ContinuousCurrent": 5.0,
+            "ServoRate": "TwentykHz",
+            "AnalogInputUpdateRate": "TwentykHz",
+            "HasPrimaryMXSupport": true,
+            "PrimaryFbkMaxMultiplier": 65536,
+            "HasAuxiliarySQRSupport": false,
+            "HasAuxiliaryMXSupport": false,
+            "AuxiliaryFbkMaxMultiplier": 0,
+            "SupportsSingleEndedEncoderInputs": false,
+            "SupportsClockDirection": false,
+            "HasBiSSEncoderSupport": true,
+            "HasEnDatEncoderSupport": true,
+            "RequiresServoOutputScaling": false,
+            "CurrentLoopAmplifierDelay": 45.6,
+            "CurrentLoopAmplifierGain": 0.0,
+            "CurrentLoopLowPassFilterResistance": 200.0,
+            "CurrentLoopLowPassFilterCapacitance": 0.01,
+            "CurrentLoopAmplifierRolloffFilterResistance": 0.0,
+            "CurrentLoopAmplifierRolloffFilterCapacitance": 0.0,
+            "CurrentLoopShouldIncludeZOHDelay": false,
+            "OptimizeAmplifierDeadtime": true,
+            "BusOvervoltageThreshold": "400",
+            "IncludeLinearAmpVoltageClamp": false,
+            "SupportsMultipleMotorWiringTypes": false,
+            "MotorWiringType": "NotApplicable"
+          }
+        }
+      ]
+    }
+  ],
+  "InterconnectedAxes": [
+    {
+      "Name": "X",
+      "Index": 0,
+      "MechanicalProduct": {
+        "Name": "PRO165LM",
+        "DeviceCatalogItemGuid": null,
+        "SecondaryDeviceCatalogItemGuid": null,
+        "DisplayName": "PRO165LM",
+        "SerialNumber": "",
+        "WasAutoDetected": false,
+        "ShouldExclude": false,
+        "ConfiguredOptions": {
+          "Travel": "-0100",
+          "Feedback": "-E1",
+          "Cable Management": "-CMS2"
+        },
+        "MechanicalAxes": [
+          {
+            "DisplayName": "PRO165LM",
+            "Stage": {
+              "Name": "PRO165LM",
+              "IsCustom": false,
+              "DefaultSpeed": 80.0,
+              "LimitDecelDistance": 4.0,
+              "DefaultRampRate": 1000.0,
+              "ThermistorAvailable": true,
+              "HomeSpeed": 50.0,
+              "HomeRampRate": 500.0,
+              "MaxSpeed": 2000.0,
+              "LowPassFilterParams.CutoffFrequency": "1000",
+              "Type": "LinearStageComponent",
+              "CarriageMass": 2.6,
+              "LoadMass": 0.0,
+              "MotorCurrentDerateFactor": 1.0,
+              "WedgeRatio": 1.0,
+              "MotorCount": 1,
+              "LimitType": "Switch",
+              "LimitPolarity": "NormallyClosed",
+              "EndOfTravelCurrentThreshold": 0.0,
+              "NominalTravel": 100.0
+            },
+            "Motor": {
+              "Name": "BLMC",
+              "MotorType": "Linear",
+              "IsCustom": false,
+              "Resistance": 4.8,
+              "Inductance": 1.33,
+              "PeakForce": 481.2,
+              "ContinuousForce": 77.7,
+              "ForceConstant": 18.51,
+              "PolePitch": 25.0,
+              "CoilMass": 0.26,
+              "BackEMFConstant": 21.28,
+              "HasHallEffectSwitches": true,
+              "RequiresCommutation": true,
+              "CommutationOffset": 0.0
+            },
+            "PrimaryFeedback": {
+              "Name": "Standard",
+              "IsCustom": false,
+              "FeedbackSource": "Motor",
+              "DeviceType": "IncrementalSineWaveEncoder",
+              "DeviceOrientation": "Linear",
+              "Resolution": 20.0,
+              "MultiplicationFactor": 1000.0,
+              "MicrostepsPerStep": 0,
+              "Flags": "None",
+              "AbsoluteEncoderBits": 1,
+              "EnDatEncoderTurns": 1,
+              "EnDatEncoderProtocolVersion": "EnDat21",
+              "BissEncoderTurns": 1,
+              "AbsoluteEncoderIncrementalResolution": 20.0
+            },
+            "NominalTravel": 100.0
+          }
+        ],
+        "GalvoScannerOrientation": null
+      },
+      "MechanicalAxis": {
+        "DisplayName": "PRO165LM",
+        "Stage": {
+          "Name": "PRO165LM",
+          "IsCustom": false,
+          "DefaultSpeed": 80.0,
+          "LimitDecelDistance": 4.0,
+          "DefaultRampRate": 1000.0,
+          "ThermistorAvailable": true,
+          "HomeSpeed": 50.0,
+          "HomeRampRate": 500.0,
+          "MaxSpeed": 2000.0,
+          "LowPassFilterParams.CutoffFrequency": "1000",
+          "Type": "LinearStageComponent",
+          "CarriageMass": 2.6,
+          "LoadMass": 0.0,
+          "MotorCurrentDerateFactor": 1.0,
+          "WedgeRatio": 1.0,
+          "MotorCount": 1,
+          "LimitType": "Switch",
+          "LimitPolarity": "NormallyClosed",
+          "EndOfTravelCurrentThreshold": 0.0,
+          "NominalTravel": 100.0
+        },
+        "Motor": {
+          "Name": "BLMC",
+          "MotorType": "Linear",
+          "IsCustom": false,
+          "Resistance": 4.8,
+          "Inductance": 1.33,
+          "PeakForce": 481.2,
+          "ContinuousForce": 77.7,
+          "ForceConstant": 18.51,
+          "PolePitch": 25.0,
+          "CoilMass": 0.26,
+          "BackEMFConstant": 21.28,
+          "HasHallEffectSwitches": true,
+          "RequiresCommutation": true,
+          "CommutationOffset": 0.0
+        },
+        "PrimaryFeedback": {
+          "Name": "Standard",
+          "IsCustom": false,
+          "FeedbackSource": "Motor",
+          "DeviceType": "IncrementalSineWaveEncoder",
+          "DeviceOrientation": "Linear",
+          "Resolution": 20.0,
+          "MultiplicationFactor": 1000.0,
+          "MicrostepsPerStep": 0,
+          "Flags": "None",
+          "AbsoluteEncoderBits": 1,
+          "EnDatEncoderTurns": 1,
+          "EnDatEncoderProtocolVersion": "EnDat21",
+          "BissEncoderTurns": 1,
+          "AbsoluteEncoderIncrementalResolution": 20.0
+        },
+        "NominalTravel": 100.0
+      },
+      "ElectricalProduct": {
+        "Name": "iXC4e",
+        "DisplayName": "iXC4e",
+        "SerialNumber": "449955-3",
+        "WasAutoDetected": true,
+        "ShouldExclude": false,
+        "ConfiguredOptions": {
+          "Current": "-10",
+          "Bus Voltage": "160V",
+          "Expansion Board": "-EB0",
+          "Multiplier": "-MX2"
+        },
+        "ElectricalAxes": [
+          {
+            "DisplayName": "iXC4e",
+            "HyperWireCommunicationChannel": 0,
+            "Drive": {
+              "Type": "XC4e",
+              "BusVoltage": 160.0,
+              "HasBipolarBusVoltage": false,
+              "PeakCurrent": 10.0,
+              "ContinuousCurrent": 5.0,
+              "ServoRate": "TwentykHz",
+              "AnalogInputUpdateRate": "TwentykHz",
+              "HasPrimaryMXSupport": true,
+              "PrimaryFbkMaxMultiplier": 65536,
+              "HasAuxiliarySQRSupport": false,
+              "HasAuxiliaryMXSupport": false,
+              "AuxiliaryFbkMaxMultiplier": 0,
+              "SupportsSingleEndedEncoderInputs": false,
+              "SupportsClockDirection": false,
+              "HasBiSSEncoderSupport": true,
+              "HasEnDatEncoderSupport": true,
+              "RequiresServoOutputScaling": false,
+              "CurrentLoopAmplifierDelay": 45.6,
+              "CurrentLoopAmplifierGain": 0.0,
+              "CurrentLoopLowPassFilterResistance": 200.0,
+              "CurrentLoopLowPassFilterCapacitance": 0.01,
+              "CurrentLoopAmplifierRolloffFilterResistance": 0.0,
+              "CurrentLoopAmplifierRolloffFilterCapacitance": 0.0,
+              "CurrentLoopShouldIncludeZOHDelay": false,
+              "OptimizeAmplifierDeadtime": true,
+              "BusOvervoltageThreshold": "400",
+              "IncludeLinearAmpVoltageClamp": false,
+              "SupportsMultipleMotorWiringTypes": false,
+              "MotorWiringType": "NotApplicable"
+            }
+          }
+        ]
+      },
+      "ElectricalAxis": {
+        "DisplayName": "iXC4e",
+        "HyperWireCommunicationChannel": 0,
+        "Drive": {
+          "Type": "XC4e",
+          "BusVoltage": 160.0,
+          "HasBipolarBusVoltage": false,
+          "PeakCurrent": 10.0,
+          "ContinuousCurrent": 5.0,
+          "ServoRate": "TwentykHz",
+          "AnalogInputUpdateRate": "TwentykHz",
+          "HasPrimaryMXSupport": true,
+          "PrimaryFbkMaxMultiplier": 65536,
+          "HasAuxiliarySQRSupport": false,
+          "HasAuxiliaryMXSupport": false,
+          "AuxiliaryFbkMaxMultiplier": 0,
+          "SupportsSingleEndedEncoderInputs": false,
+          "SupportsClockDirection": false,
+          "HasBiSSEncoderSupport": true,
+          "HasEnDatEncoderSupport": true,
+          "RequiresServoOutputScaling": false,
+          "CurrentLoopAmplifierDelay": 45.6,
+          "CurrentLoopAmplifierGain": 0.0,
+          "CurrentLoopLowPassFilterResistance": 200.0,
+          "CurrentLoopLowPassFilterCapacitance": 0.01,
+          "CurrentLoopAmplifierRolloffFilterResistance": 0.0,
+          "CurrentLoopAmplifierRolloffFilterCapacitance": 0.0,
+          "CurrentLoopShouldIncludeZOHDelay": false,
+          "OptimizeAmplifierDeadtime": true,
+          "BusOvervoltageThreshold": "400",
+          "IncludeLinearAmpVoltageClamp": false,
+          "SupportsMultipleMotorWiringTypes": false,
+          "MotorWiringType": "NotApplicable"
+        }
+      },
+      "Units": {
+        "Name": "mm",
+        "Type": "Linear",
+        "ScaleFactor": 1.0,
+        "IsInverted": false,
+        "IsCustom": false
+      }
+    }
+  ],
+  "Parameters": [
+    {
+      "AxisIndex": "0",
+      "AxisName": "X",
+      "DefaultAxisRampRate": "1000",
+      "DefaultAxisRampType": "Linear",
+      "AverageCurrentThreshold": "4.197731018066406",
+      "MaxJogSpeed": "80",
+      "MaxSpeedClamp": "2000",
+      "MaxCurrentClamp": "10",
+      "HomeStartDirection": "NegativeDirection",
+      "LimitType": "EotLimitSwitch",
+      "MarkerInputSource": "FeedbackInput0",
+      "HomeType": "AtCurrentPosition",
+      "MotorType": "ACBrushlessLinear",
+      "ReverseMotionDirection": "False",
+      "DecimalPlaces": "4",
+      "CountsPerUnit": "50000",
+      "UnitsName": "mm",
+      "FeedbackInput0": "PrimaryFeedback",
+      "FeedbackInput1": "PrimaryFeedback",
+      "GainKv": "1"
+    }
+  ],
+  "VersionInformation": {
+    "MachineSetupDataVersion": "2.10.2.3124",
+    "Automation1Version": "2.11.0.3163"
+  },
+  "ControllerType": "DriveBased"
+}
