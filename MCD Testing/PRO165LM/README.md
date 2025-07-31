@@ -6,7 +6,7 @@ In GenerateMCD.py, changing the workflow variable to 'wf2' accomplishes this.
 
 
 
-**convert\_to\_mcd()** has the option to pass specs\_dict as None if you want to create an MCD from a fully configured JSON file, otherwise, it will take the path that inserts the variables into Template-iXC4e.json and uses it.
+**convert_to_mcd()** has the option to pass specs_dict as None if you want to create an MCD from a fully configured JSON file, otherwise, it will take the path that inserts the variables into Template-iXC4e.json and uses it.
 
 
 

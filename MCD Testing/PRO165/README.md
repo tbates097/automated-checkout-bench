@@ -4,19 +4,19 @@ Workflow 1 is the intended workflow of these methods within the Automated CMP Ch
 
 Workflow 1 through **GenerateMCD.py**: 
 
-**\_update\_json\_config()**
+**_update_json_config()**
 
 Reads in Template-iXC4e.json
 
-Inserts "stage\_type" and "axis" into appropriate fields with ""
+Inserts "stage_type" and "axis" into appropriate fields with ""
 
-Inserts key/value pairs from "specs\_dict" into "ConfiguredOptions"
+Inserts key/value pairs from "specs_dict" into "ConfiguredOptions"
 
 Saves as WorkingTemplate-iXC4e.json
 
 
 
-**convert\_to\_mcd()**
+**convert_to_mcd()**
 
 Reads in WorkingTemplate-iXC4e.json
 
@@ -28,13 +28,13 @@ Returns MCD object
 
 
 
-**calculate\_parameters()**
+**calculate_parameters()**
 
 Passes MCD object from **ConvertToMcd** to **CalculateParameters**
 
 Returns new MCD object
 
-Executes mcd\_obj.**WriteToFile**
+Executes mcd_obj.**WriteToFile**
 
 
 
