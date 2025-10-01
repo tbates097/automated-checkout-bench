@@ -18,7 +18,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
 # global definitions---------------------------------------
 
 if not getattr(sys, 'frozen', False):
-    dir_path = r"C:\Users\tbates\Python\automated-checkout-bench"
+    dir_path = os.getcwd()
     if not os.path.exists(dir_path + r"\Temp Files"):
         os.makedirs(dir_path + r"\Temp Files")
     temp_files = [f for f in os.listdir(dir_path + r"\Temp Files\\")]  # remove all previously created temp files
@@ -43,12 +43,12 @@ def resource_path(relative_path):  # this function opens files that are packaged
 
 # toggle the two lines below depending on if the code is to be executed from IDE or compiled .exe.
 if not getattr(sys, 'frozen', False):
-    db_filepath = r"C:\Users\tbates\Python\automated-checkout-bench\ballscrew_sizer.db"  # use this when running in python
+    db_filepath = os.path.join(dir_path,"ballscrew_sizer.db")  # use this when running in python
 else:
     db_filepath = resource_path('ballscrew_sizer.db')  # change to this before deploying as .exe
 
 if not getattr(sys, 'frozen', False):
-    config_filepath = r"C:\Users\tbates\Python\automated-checkout-bench\master.db"  # use this when running in python
+    config_filepath = os.path.join(dir_path,"master.db")  # use this when running in python
 else:
     config_filepath = resource_path('master.db')  # change to this before deploying as .exe
 
@@ -824,10 +824,11 @@ class PopupConfig(QtWidgets.QDialog, popup_config):
         spec_names = dialog.spec_names
         spec_vals = dialog.spec_vals
         smart_string = smart_string
-        
+        param_dict = dict(zip(spec_names, spec_vals))
+
         del dialog
         if result == QtWidgets.QDialog.Accepted:
-            return config_selections
+            return config_selections, param_dict
         else:
             print('Cancelled')
             return None, None, None

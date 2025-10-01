@@ -1,0 +1,5 @@
+SELECT 
+	PartDescription,
+	PartNum
+FROM `warehouse-363320.Epicor10Replication.JobHead`
+	WHERE JobNum = @jobnum

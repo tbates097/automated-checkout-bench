@@ -1,0 +1,24 @@
+Testing Technician,,,
+Date of Testing,,,
+,,,
+Electrical Testing,Result,,Notes
+Halls,,,
+Marker,,,
+Limits,,,
+Lissajous Tuning,N/A,,These fields will require manual entry.                                                                                                                                            They will not be required for component orders.
+Brake,N/A,,
+Tcomp,N/A,,
+FlashConfig,N/A,,
+ES Verification,N/A,,
+CMS Check,N/A,,
+,,,
+Travel Verification,Result,,Notes
+Total Travel,,,"Limit to limit or hardstop to hardstop, depending on encoder type"
+Home Marker from Limit,,,Distance from marker to the limit used to begin marker search
+Home Offset,,,"Does not apply if absolute encoder, N/A for component orders"
+,,,
+Absolute value at CCW EOT,,,Only applies if absolute encoder
+Absoloute Position Offset,,,"Only applies if absolute encoder, N/A for component orders"
+,,,
+Hi-Pot / Ground Bond Testing,,,Notes
+Hi-Pot Test,N/A,,

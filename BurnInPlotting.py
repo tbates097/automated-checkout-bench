@@ -12,8 +12,8 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import datetime
 
-#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
 class Burn_In_Plotting():

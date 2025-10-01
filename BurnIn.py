@@ -19,8 +19,8 @@ from exceptions import TestSequenceAbort
 
 from BurnInPlotting import Burn_In_Plotting
 
-#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from DecodeFaults import decode_faults
 
@@ -30,7 +30,7 @@ class TestSequenceAbort(Exception):
         self.shown_message = shown_message
 
 class burn_in():
-    def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file):
+    def __init__(self, speed, burnin_time, secondary_ui, window, test_axes, nominal_travel, fault_log, stage_info, duty_cycle, folder, stage_type, absolute, job, op, comments, specs_dict, stations, stage_log_file, param_dict):
         #self.stage_type = stage_type
         self.speed = speed
         self.burnin_time = burnin_time
@@ -50,6 +50,7 @@ class burn_in():
         self.specs_dict = specs_dict
         self.stations = stations
         self.stage_log_file = stage_log_file
+        self.param_dict = param_dict
         
         self.sample_rate = 1000
         
@@ -133,7 +134,7 @@ class burn_in():
         Raises:
             ValueError: If the spec is not found or cannot be converted to float
         """
-        spec = self.specs_dict.get(spec_key)
+        spec = self.param_dict.get(spec_key)
         if spec is None:
             raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
         
@@ -150,7 +151,7 @@ class burn_in():
         self.list_velocity = []
         try:
             for axis in self.test_axes:
-                self.list_commands.append(self.get_spec_value('NominalTravel') / 2)
+                self.list_commands.append(self.nominal_travel / 2)
                 self.list_velocity.append(self.speed)
             try:
                 self.movetostart()

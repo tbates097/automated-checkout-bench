@@ -1,32 +1,26 @@
 NumAxes:1.0 
-Motor:BLMC (Forcer Length : "-142", Winding Designation : "-A", Air Cooling : "-NC", Hall Effect Sensors : "-H", Preparation : "-S", Magnet Track : "-P") 
+Motor:BLMUC(Forcer Length : "-95", Winding Designation : "-A", Air Cooling : "-NC", Hall Effect Sensors : "-H", Preparation : "-S") 
 NumMotors:1.0 
-LinearFrictionForce:7.0 N
+LinearFrictionForce:1.0 N
 WedgeRatio:1.0 
 MotorCurrentDerateFactor:1.0 
 PrmFbkType:SIN 
 PrmFbkFinalResolution:20.0 µm
 PrmIncFbkRawResolution:20.0 µm
-PrmAbsFbkBits: 
-PrmAbsFbkInverted: 
-AuxFbkType: 
-AuxFbkFinalResolution:0.0 µm
-AuxIncFbkRawResolution:0.0 µm
-AuxAbsFbkBits:0.0 
-AuxAbsFbkInverted: 
 LimitType:SWITCH 
-NominalTravel:100.0 mm
-LimitToLimitTravel:105.0 mm
-HardToHard-FirstContact:116.0 mm
-HardToHard-Compressed:120.0 mm
-LimitDecelDistance:5.0 mm
-EndOfTravelCurrentThreshold:0.0 Apk
-MaxSpeed:2000.0 mm/s
+NominalTravel:60.0 mm
+LimitToLimitTravel:66.0 mm
+HardToHard-FirstContact:75.0 mm
+HardToHard-Compressed:75.0 mm
+LimitDecelDistance:4.1 mm
+MaxSpeed:200.0 mm/s
 DefaultSpeed:80.0 mm/s
 DefaultRampRate:1000.0 mm/s/s
 HomeSpeed:80.0 mm/s
 HomeRampRate:500.0 mm/s/s
-MovingMass:2.6 kg
-TotalMass:8.399999999999999 kg
-URL:https://www.aerotech.com/product/stages-actuators/pro165lm-mechanical-bearing-linear-motor-stage/ 
+MovingMass:1.6 kg
+TotalMass:4.5 kg
+URL:https://www.aerotech.com/product/stages-actuators/ant130lzs-series-single-axis-z-low-profile-direct-drive-nanopositioning-stages/ 
+PrmAbsFbkBits: 
+PrmAbsFbkInverted: 
 ThermistorAvailable:1.0 

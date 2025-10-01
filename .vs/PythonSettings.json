@@ -1,0 +1,4 @@
+{
+  "Interpreter": "CondaEnv|CondaEnv|production-2.1",
+  "SuppressConfigureTestFrameworkPrompt": "true"
+}

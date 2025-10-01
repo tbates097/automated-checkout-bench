@@ -18,7 +18,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
 # global definitions---------------------------------------
 
 if not getattr(sys, 'frozen', False):
-    dir_path = r"C:\Users\tbates\Python\automated-checkout-bench"
+    dir_path = os.getcwd()
     if not os.path.exists(dir_path + r"\Temp Files"):
         os.makedirs(dir_path + r"\Temp Files")
     temp_files = [f for f in os.listdir(dir_path + r"\Temp Files\\")]  # remove all previously created temp files

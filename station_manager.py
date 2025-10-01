@@ -37,9 +37,11 @@ class StationManager:
             except json.JSONDecodeError:
                 print(f"Error reading {STATION_CONFIG_FILE}. Using default configuration.")
         return {
-            'ST01': '192.168.1.15',
-            'ST02': '192.168.1.16',
-            'ST03': '192.168.1.17'
+            'ST01': '192.168.1.10',
+            'ST02': '192.168.1.11',
+            'ST03': '192.168.1.12',
+            'ST04': '192.168.1.13',
+            'ST05': '192.168.1.14'
         }
 
     def get_available_stations(self):

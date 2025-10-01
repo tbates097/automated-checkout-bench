@@ -1,6 +1,9 @@
 import tkinter as tk
 from tkinter import Text
 import threading
+import sys
+
+sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
 from Logger import TextLogger
 
 class SecondaryUI:
@@ -15,6 +18,9 @@ class SecondaryUI:
         self.station_loggers = {}  # Add this to store loggers
         self.lock = threading.Lock()  # Ensure thread-safe updates
         self.abort_callbacks = {}  # Store abort callbacks for each station
+        
+        # Bind Escape key to exit fullscreen
+        self.window.bind('<Escape>', self.exit_fullscreen)
 
         # Configure grid layout for consistent frame scaling
         for row in range(2):  # 2 rows
@@ -136,6 +142,10 @@ class SecondaryUI:
         """Trigger the abort callback for a station"""
         if station in self.abort_callbacks:
             self.abort_callbacks[station]()
+
+    def exit_fullscreen(self, event=None):
+        """Exit fullscreen mode when Escape is pressed"""
+        self.window.attributes("-fullscreen", False)
 
     def update_station_status(self, stations, running=False, serial=None):
         """

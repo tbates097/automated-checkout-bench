@@ -5,6 +5,7 @@ Created on Tue Sep 24 15:15:54 2024
 @author: TBates
 """
 
+from ast import Param
 import os
 import sys
 import tkinter as tk
@@ -22,16 +23,18 @@ from secondary_UI import SecondaryUI
 from PyQt5.QtWidgets import QApplication
 from station_manager import StationManager
 from station_manager_instance import set_station_manager
+from google.cloud import bigquery
 
-
-#sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 
 station_dict = {
-    'ST01': '192.168.1.15',
-    'ST02': '192.168.1.16',
-    'ST03': '192.168.1.17'
+    'ST01': '192.168.1.10',
+    'ST02': '192.168.1.11',
+    'ST03': '192.168.1.12',
+    'ST04': '192.168.1.13',
+    'ST05': '192.168.1.14'
 }
 
 station_states = {
@@ -47,13 +50,17 @@ station_states = {
 station_lock = threading.Lock()
 
 secondary_ui = None
+smartstring_travel = None
+full_smart_string = None  # Store the complete smart string for MCD naming
 test_axes = []
 specs_dict = {}
+param_dict = {}
 absolute = False
 allocated_stations = []
 previously_allocated_stations = set()
-part_entry = None
+# part_entry is now local to UI function
 BI_state = 'default'  # Added global BI_state variable with default value
+bus_volt = "80"
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -73,7 +80,6 @@ def load_user_inputs():
 def allocate_stations(num_stations, program_id):
     """Allocate the required number of free stations, or return None if not enough are available."""
     try:
-        #print(f"Attempting to allocate {num_stations} stations")  # Debug print
         # Try to acquire the lock with a timeout of 5 seconds
         if not station_lock.acquire(timeout=5):
             print("Could not acquire station lock - timeout")
@@ -83,7 +89,6 @@ def allocate_stations(num_stations, program_id):
             station for station in station_states.items() 
             if station[1]["status"] == "free"
         ]
-        #print(f"Found {len(free_stations)} free stations: {free_stations}")  # Debug print
         
         if len(free_stations) >= num_stations:
             allocated = [station[0] for station in free_stations[:num_stations]]
@@ -92,7 +97,6 @@ def allocate_stations(num_stations, program_id):
                     "status": "in-use",
                     "program_id": program_id
                 })
-            print(f"Successfully allocated stations: {allocated}")  # Debug print
             return allocated
         
         print(f"Not enough free stations. Need {num_stations}, found {len(free_stations)}")
@@ -103,7 +107,6 @@ def allocate_stations(num_stations, program_id):
     finally:
         try:
             station_lock.release()
-            #print("Released station lock")
         except RuntimeError:
             print("Lock was not acquired")
             pass
@@ -137,9 +140,8 @@ def get_station_controller(station):
                 return station_states[station]["controllers"]
     return None
 
-def launch_secondary_ui():
+def launch_secondary_ui(focus_widget=None):
     """Launch the secondary UI in a new thread."""
-    global part_entry
     def run_secondary_ui():
         global secondary_ui
         secondary_ui = SecondaryUI()
@@ -149,15 +151,21 @@ def launch_secondary_ui():
     thread.start()
     
     # Give the secondary UI time to launch, then refocus main window
-    window.after(500, lambda: (
-        window.lift(),
-        window.focus_force(),
-        part_entry.focus_set(),
-        part_entry.select_range(0, tk.END)
-    ))
+    if focus_widget:
+        window.after(500, lambda: (
+            window.lift(),
+            window.focus_force(),
+            focus_widget.focus_set(),
+            focus_widget.select_range(0, tk.END)
+        ))
+    else:
+        window.after(500, lambda: (
+            window.lift(),
+            window.focus_force()
+        ))
 
 def UI():
-    global window, station_manager, part_entry
+    global window, station_manager
     window = tk.Tk()
     window.title("Aerotech Stage Check-out")
     
@@ -169,9 +177,9 @@ def UI():
     usable_width = ctypes.windll.user32.GetSystemMetrics(78)  # Width excluding taskbar
     usable_height = ctypes.windll.user32.GetSystemMetrics(79)  # Height excluding taskbar
     
-    # Set desired window size
-    window_height = 950  # Reduced from 1100
-    window_width = 900   # Keep width the same
+    # Set desired window size for side-by-side layout
+    window_height = 800  # Reduced height since text widget moves to side
+    window_width = 1400  # Increased width to accommodate side-by-side layout
     
     # Ensure the window size does not exceed usable screen dimensions
     window_width = min(window_width, usable_width)
@@ -226,8 +234,8 @@ def UI():
         window.attributes('-topmost', False)
         window.focus_force()
         
-        # Now set focus to part number entry
-        window.after(100, lambda: (part_entry.focus_set(), part_entry.select_range(0, tk.END)))
+        # Now set focus to job number entry (now at the top) - will be set later after widget creation
+        pass
     
     # Set window icon after positioning
     try:
@@ -258,48 +266,50 @@ def UI():
     # Initialize Tkinter window
     window.resizable(True, False)  # This code helps to disable windows from resizing
 
-    window.grid_rowconfigure(0, weight=1)
-    window.grid_rowconfigure(1, weight=1)
-    window.grid_columnconfigure(0, weight=1)
-    window.grid_columnconfigure(1, weight=1)
+    # Configure grid for side-by-side layout
+    window.grid_rowconfigure(0, weight=1)  # Single row for both frames
+    window.grid_columnconfigure(0, weight=0, minsize=850)  # Left column for input frame (fixed width)
+    window.grid_columnconfigure(1, weight=1)  # Right column for text frame (expandable)
 
     '''
     # MAIN USER INPUT FRAME
     '''
     
-    input_frame_width = 850  # Keep width the same
-    input_frame_height = 750  # Reduced from 900
+    input_frame_width = 830  # Slightly reduced for left side layout
+    input_frame_height = 750  # Keep same height
     
     input_frame = tk.Frame(master=window, width=input_frame_width, height=input_frame_height)
-    input_frame.grid(row=0, column=0, sticky='nsew', padx=20, pady=10)  # Reduced pady from 15
+    input_frame.grid(row=0, column=0, sticky='nsew', padx=(20, 10), pady=20)  # Left side padding
     input_frame.grid_propagate(True)
     
-    # Configure columns and rows with more space
-    input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=850 / 4, uniform='column')
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], weight=1, minsize=35)  # Reduced minsize from 40
+    # Configure columns and rows with more space for left side layout
+    input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=830 / 4, uniform='column')
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], weight=1, minsize=35)
 
     # Define row indices with better spacing and grouping
     input_frame.h1_row = 0        # Top separator
     input_frame.config_label_row = 1  # "Configuration" heading
-    input_frame.ID_row = 2        # Part Number section
-    input_frame.num_axes_row = 3      # Number of Stages & Absolute Encoder
-    input_frame.h2_row = 4        # Separator after configuration
+    input_frame.ID_row = 2        # Job Number section
+    input_frame.smart_string_row = 3  # Smart String display
+    input_frame.num_axes_row = 4      # Number of Stages & Absolute Encoder
+    input_frame.h2_row = 5        # Separator after configuration
     
-    input_frame.params_label_row = 5  # "Test Parameters" heading
-    input_frame.speed_row = 6         # Burn-In Speed & Duty Cycle
-    input_frame.cycles_row = 7        # Burn-In Time
-    input_frame.h3_row = 8        # Separator after parameters
+    input_frame.params_label_row = 6  # "Test Parameters" heading
+    input_frame.speed_row = 7         # Burn-In Speed & Duty Cycle
+    input_frame.cycles_row = 8        # Burn-In Time
+    input_frame.bus_row = 9
+    input_frame.h3_row = 10        # Separator after parameters
     
-    input_frame.doc_label_row = 9    # "Documentation" heading
-    input_frame.job_row = 10          # Job Number
-    input_frame.op_row = 11           # Operator
-    input_frame.comm_row = 12         # Comments
-    input_frame.h4_row = 13       # Separator before Run button
-    input_frame.run_row = 14      # Run button
-    input_frame.out_row = 15      # Output area
+    input_frame.doc_label_row = 11    # "Documentation" heading
+    input_frame.job_row = 12          # Part Number (moved here)
+    input_frame.op_row = 13           # Operator
+    input_frame.comm_row = 14         # Comments
+    input_frame.h4_row = 15       # Separator before Run button
+    input_frame.run_row = 16      # Run button
+    input_frame.out_row = 17      # Output area
 
     # Configure rows with more space
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], weight=1, minsize=35)
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], weight=1, minsize=35)
 
     # Define Automation1 Studio-inspired color palette
     BACKGROUND = "#F0F0F0"  # Light gray background
@@ -339,9 +349,9 @@ def UI():
     # TEXT WIDGET FRAME
     '''
     
-    # Create the text frame with adjusted padding
+    # Create the text frame on the right side
     text_frame = tk.Frame(master=window)
-    text_frame.grid(row=1, column=0, sticky='nsew', padx=20, pady=10)  # Reduced pady from 15
+    text_frame.grid(row=0, column=1, sticky='nsew', padx=(10, 20), pady=20)  # Right side positioning
     text_frame.grid_propagate(False)
     
     # Configure the grid in text_frame_tab3
@@ -366,6 +376,98 @@ def UI():
     
     sys.stdout = text_logger
     
+    class JobQueryClient:
+        def __init__(self):
+            self.client = bigquery.Client()
+            self.project_id = 'warehouse-363320'
+        
+        def get_part_info(self, job_num):
+            """Query BigQuery for both PartNum and PartDescription using job number"""
+            query_path = os.path.join(os.path.dirname(__file__), "query.txt")
+
+            with open(query_path, 'r') as f:
+                query_template = f.read()
+            query = query_template.replace("@jobnum", f"'{job_num}'")
+            
+            try:
+                query_job = self.client.query(query)
+                results = query_job.result()
+                rows = list(results)
+                if not rows:
+                    return None, None
+                row = rows[0]
+
+                # Return using attribute access (the correct method for BigQuery)
+                part_num = getattr(row, 'PartNum', None)
+                part_desc = getattr(row, 'PartDescription', None)
+                
+                return part_num, part_desc
+                
+            except Exception as e:
+                print(f"Error querying BigQuery: {str(e)}")
+                return None, None
+
+    def parse_smart_string(smart_string):
+        """
+        Parse the smart string to extract part number and travel
+        Example: PRO165LM-0310-TT1-E1-PL0 -> ("PRO165LM", "0310")
+        Travel is the first all-numeric item after the part number, regardless of length or leading zeros.
+        """
+        if not smart_string:
+            return None, None
+        
+        # Convert to string if it's not already (handles integers from BigQuery)
+        smart_string_str = str(smart_string)
+        
+        # Skip if it's clearly just a number (like "25")
+        if smart_string_str.isdigit():
+            return None, None
+        
+        try:
+            # Split by dashes
+            parts = smart_string_str.split('-')
+            if not parts or len(parts) < 2:
+                return None, None
+            
+            # If the smart string starts with a PRO-series part, remove a trailing SLE or SL suffix
+            # Example: PRO115SL-050-... -> PRO115, PRO165SLE-0310-... -> PRO165
+            if parts[0].startswith('PRO'):
+                part_number = re.sub(r'(SLE|SL)$', '', parts[0])
+            else:
+                part_number = parts[0]
+            
+            # Look for travel in remaining parts - first all-numeric item
+            travel = None
+            for part in parts[1:]:
+                if part.isdigit():
+                    travel = part
+                    break
+            
+            return part_number, travel
+            
+        except Exception as e:
+            print(f"Error parsing smart string '{smart_string}': {str(e)}")
+            return None, None
+
+    def is_smart_string(candidate):
+        """Return True if candidate looks like a smart string (has dash between first two items)"""
+        if not candidate:
+            return False
+        
+        # Convert to string if it's an integer/other type
+        candidate_str = str(candidate)
+        
+        # Skip if it's just a number (like "25")
+        if candidate_str.isdigit():
+            return False
+        
+        # Must contain at least one dash
+        if '-' not in candidate_str:
+            return False
+            
+        parts = candidate_str.split('-')
+        return len(parts) >= 2 and all(parts[:2])
+
     def start_test_thread():
         global allocated_stations
         """Start a test thread for the required number of stations."""
@@ -474,7 +576,6 @@ def UI():
         Re-enables the 'Run' button in the UI.
         """
         btn_run.config(state=tk.NORMAL)
-        #print("Run button re-enabled.")    
     
     def test(program_id, serial_number, station_controllers):
         """Main test function in UI.py"""
@@ -505,13 +606,13 @@ def UI():
             initialized_controllers = {}
             for axis_name, ip_address in station_controllers.items():
                 try:
-                    #print(f"Connecting to {axis_name} at {ip_address}...")
+                    print(f"Connecting to {axis_name} at {ip_address}...")
                     controller = a1.Controller.connect(host=ip_address)
-                    #print("Controller connected, starting...")
+                    print("Controller connected, starting...")
                     controller.start()
                     initialized_controllers[axis_name] = controller
                     print(f"Successfully connected to {axis_name} at {ip_address}")
-                    #print(f"{axis_name} running: {controller.is_running}")
+
                 except Exception as e:
                     # Clean up any initialized controllers
                     for ctrl in initialized_controllers.values():
@@ -527,12 +628,74 @@ def UI():
             stations = [int(station[2:]) for station, state in station_manager.station_states.items()
                         if state["program_id"] == program_id]
             
+            # Bus voltage will be passed separately to checkout_test.py
+            # No longer adding bus voltage to specs_dict (now goes in electrical_dict)
+
+            # Intelligent Travel comparison logic
+            if smartstring_travel is not None and specs_dict and param_dict:
+                try:
+                    # Convert smartstring travel to integer (remove leading zeros)
+                    smartstring_travel_int = int(smartstring_travel)
+                    
+                    # Get current travel from specs_dict
+                    current_travel_raw = specs_dict.get('Travel')
+                    current_nominal = param_dict.get('NominalTravel')
+                    
+                    # Clean and convert specs travel value (remove dashes, convert to int)
+                    current_travel = None
+                    if current_travel_raw is not None:
+                        try:
+                            # Remove leading dash if present and convert to int
+                            travel_str = str(current_travel_raw).lstrip('-')
+                            current_travel = int(travel_str) if travel_str.isdigit() else None
+                        except (ValueError, AttributeError):
+                            current_travel = None
+                    
+                    # Check if smartstring travel differs from database travel
+                    if current_travel is not None and smartstring_travel_int != current_travel:
+                        print(f"Travel mismatch detected! Updating from {current_travel} to {smartstring_travel_int}")
+                        
+                        # Update Travel in specs_dict
+                        specs_dict['Travel'] = smartstring_travel_int
+                        
+                        # Calculate difference for parameter adjustments
+                        if current_nominal is not None:
+                            travel_difference = smartstring_travel_int - current_nominal
+                            
+                            # Update NominalTravel to match smartstring
+                            param_dict['NominalTravel'] = float(smartstring_travel_int)
+                            
+                            # Adjust other travel-related parameters by the difference
+                            if 'LimitToLimitTravel' in param_dict:
+                                original_ltl = param_dict['LimitToLimitTravel']
+                                param_dict['LimitToLimitTravel'] = original_ltl + travel_difference
+                                
+                            if 'HardToHard-FirstContact' in param_dict:
+                                original_h2h_first = param_dict['HardToHard-FirstContact']
+                                param_dict['HardToHard-FirstContact'] = original_h2h_first + travel_difference
+                                
+                            if 'HardToHard-Compressed' in param_dict:
+                                original_h2h_comp = param_dict['HardToHard-Compressed']
+                                param_dict['HardToHard-Compressed'] = original_h2h_comp + travel_difference
+                                
+                    elif current_travel is None and smartstring_travel_int:
+                        print(f"No travel in specs_dict, using smartstring travel: {smartstring_travel_int}")
+                        specs_dict['Travel'] = smartstring_travel_int
+                        if 'NominalTravel' not in param_dict:
+                            param_dict['NominalTravel'] = float(smartstring_travel_int)
+                        
+                except (ValueError, TypeError) as e:
+                    print(f"Error processing travel values: {e}")
+                    print(f"SmartString Travel: {smartstring_travel}, Current Travel: {current_travel}")
+
             # Run the test
             stage_test = stage_checkout(
                 stage_type, speed, BI_time, job, op, 
                 comm, secondary_ui, window, num_axes, 
                 test_axes, duty_cycle, specs_dict, 
-                absolute, stations
+                absolute, stations, param_dict,
+                full_smart_string=full_smart_string,
+                bus_voltage=bus_volt
             )
 
             # Register abort callbacks for each station
@@ -543,7 +706,6 @@ def UI():
                     lambda axis=axis: stage_test.abort_test(axis)
                 )
 
-            #print(f'Station Controllers-test: {station_controllers}')
             stage_test.test(reenable_run_button, initialized_controllers)  
 
         except Exception as e:
@@ -577,37 +739,113 @@ def UI():
             del test
         
         gc.collect()
-        #print("Resources cleaned up and garbage collection completed.")
-
-    global part_number
-    part_number = tk.StringVar(value="Scan Part Number Barcode")
 
     def on_scan():
-        global specs_dict
-        #file_path = r'C:\Users\tbates\Python\automated-checkout-bench\Temp Files\specs.txt'
+        global specs_dict, param_dict, smartstring_travel, full_smart_string
+        
+        # Get job number from entry field
+        job_num = var_job.get()
+        if not job_num:
+            messagebox.showerror("Error", "Please enter a job number")
+            return
+            
+        # Query for part description
+        client = JobQueryClient()
+        part_num, part_desc = client.get_part_info(job_num)
+        
+        # Choose the correct smart string source
+        smart_string = None
+        if is_smart_string(part_num):
+            smart_string = part_num
+        elif is_smart_string(part_desc):
+            smart_string = part_desc
+        else:
+            messagebox.showerror("Error", "No valid smart string found in PartNum or PartDescription")
+            return
+        
+        # Display only the smart string
+        var_smart_string.set(smart_string)
+        
+        # Store the full smart string for MCD naming
+        full_smart_string = smart_string
+        
+        # Parse smart string
+        part_num_parsed, smartstring_travel = parse_smart_string(smart_string)
+        
+        if not part_num_parsed:
+            messagebox.showerror("Error", "Could not parse part number from smart string")
+            return
+            
+        # Update part number entry field
+        part_number.set(part_num_parsed)
+        
+        # Force UI to refresh and display the updated values before opening dialog
+        window.update_idletasks()
+
+        # Continue with existing BallscrewSizer flow using extracted part number
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
         app_instance = App()
+        
         try:
-            config_selections = app_instance.show_popup_config_dialog(stage=part_entry.get())
-            print("Stage Configuration Selections:", config_selections)
-        except TypeError:
+            config_selections, param_dict = app_instance.show_popup_config_dialog(stage=part_num_parsed)
+        except (TypeError, ValueError):
             app.quit()
             return
+            
         if config_selections:
             specs_dict = config_selections
-        #if stage_spec_names and stage_spec_vals:
-            # Create a dictionary by zipping the two lists
-            #specs_dict = dict(zip(stage_spec_names, stage_spec_vals))
-
         else:
             print("No stage specifications found.")
 
         app_instance.deleteLater()  # Close the App instance
         del app_instance      # Ensure the instance is deleted
-        app.quit()            # Quit the QApplication
+        app.quit()           # Quit the QApplication
 
+    def on_part_reconfigure():
+        """Re-configure BallscrewSizer with manually edited part number"""
+        global specs_dict, param_dict, smartstring_travel, full_smart_string
+        
+        # Get part number from entry field
+        part_num = part_number.get()
+        if not part_num or part_num == "Scan Part Number Barcode":
+            messagebox.showerror("Error", "Please enter a valid part number")
+            return
+        
+        # Clear full smart string since manual entry doesn't provide barcode-scanned smart string
+        full_smart_string = None
+            
+        # Continue with existing BallscrewSizer flow using entered part number
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        app_instance = App()
+        
+        try:
+            config_selections, param_dict = app_instance.show_popup_config_dialog(stage=part_num)
+        except (TypeError, ValueError):
+            app.quit()
+            return
+            
+        if config_selections:
+            specs_dict = config_selections
+        else:
+            print("No stage specifications found.")
+
+        app_instance.deleteLater()  # Close the App instance
+        del app_instance      # Ensure the instance is deleted
+        app.quit()           # Quit the QApplication
+    
+    def bus_def():
+        global bus_volt
+        if bus_var.get() == "40":
+            bus_volt = "40"
+        elif bus_var.get() == "80":
+            bus_volt = "80"
+        else:
+            bus_volt = "160"
+        
     def time_def():
         global BI_state
         if time_var.get() == 'default':
@@ -636,17 +874,26 @@ def UI():
     standard_padx = 10  # Keep the same
     standard_pady = 6   # Reduced from 8
 
-    # Part Number section
-    lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
-    lbl_stage.grid(row=input_frame.ID_row, column=0, padx=standard_padx, pady=standard_pady)
+    # Job Number section (moved to top)
+    lbl_job_top = tk.Label(master=input_frame, text="Job Number", font=label_font)
+    lbl_job_top.grid(row=input_frame.ID_row, column=0, padx=standard_padx, pady=standard_pady)
 
-    part_entry = tk.Entry(input_frame, textvariable=part_number, width=25, font=("Segoe UI", 9))
-    part_entry.grid(row=input_frame.ID_row, column=1, padx=standard_padx, pady=standard_pady)
-    part_entry.bind("<FocusIn>", on_entry_focus)
-    part_entry.focus()
+    var_job = tk.StringVar(value=job_value)
+    ent_job_top = tk.Entry(input_frame, textvariable=var_job, width=25, font=("Segoe UI", 9))
+    ent_job_top.grid(row=input_frame.ID_row, column=1, padx=standard_padx, pady=standard_pady)
+    ent_job_top.bind("<FocusIn>", on_entry_focus)
+    # Initial focus will be set after window positioning
 
     scan_button = tk.Button(input_frame, text="Configure", width=15, height=1, font=label_font, command=on_scan)
     scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=standard_padx, pady=standard_pady)
+
+    # Smart String display section
+    lbl_smart_string = tk.Label(master=input_frame, text="Smart String", font=label_font)
+    lbl_smart_string.grid(row=input_frame.smart_string_row, column=0, padx=standard_padx, pady=standard_pady)
+    
+    var_smart_string = tk.StringVar(value="")
+    ent_smart_string = tk.Entry(master=input_frame, textvariable=var_smart_string, width=50, state='readonly')
+    ent_smart_string.grid(row=input_frame.smart_string_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
 
     # Configuration section
     lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", font=label_font)
@@ -692,27 +939,45 @@ def UI():
     ent_other = tk.Entry(master=input_frame, textvariable=var_time, width=15, state=tk.DISABLED)
     ent_other.grid(row=input_frame.cycles_row, column=3, padx=standard_padx, pady=standard_pady)
     
-    # Documentation section
-    lbl_job = tk.Label(master=input_frame, text="Job Number", font=label_font)
-    lbl_job.grid(row=input_frame.job_row, column=0, padx=standard_padx, pady=standard_pady)
+    lbl_bus = tk.Label(master=input_frame, text="Bus Voltage", font=label_font)
+    lbl_bus.grid(row=input_frame.bus_row, column=0, padx=standard_padx, pady=standard_pady)
+
+    bus_var = tk.StringVar(value="80")
+    bus_40 = tk.Radiobutton(master=input_frame, text="40v", variable=bus_var, value="40", command=bus_def)
+    bus_40.grid(row=input_frame.bus_row, column=1, padx=standard_padx, pady=standard_pady)
+
+    bus_80 = tk.Radiobutton(master=input_frame, text="80v", variable=bus_var, value="80", command=bus_def)
+    bus_80.grid(row=input_frame.bus_row, column=2, padx=standard_padx, pady=standard_pady)
+
+    bus_160 = tk.Radiobutton(master=input_frame, text="160v", variable=bus_var, value="160", command=bus_def)
+    bus_160.grid(row=input_frame.bus_row, column=3, padx=standard_padx, pady=standard_pady)
+
+    # Part Number section (moved from top)
+    lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
+    lbl_stage.grid(row=input_frame.job_row, column=0, padx=standard_padx, pady=standard_pady)
     
-    var_job = tk.StringVar(value=job_value)
-    ent_job = tk.Entry(master=input_frame, textvariable=var_job, width=50)
-    ent_job.grid(row=input_frame.job_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
+    global part_number
+    part_number = tk.StringVar(value="Scan Part Number Barcode")
+    part_entry = tk.Entry(master=input_frame, textvariable=part_number, width=35)
+    part_entry.grid(row=input_frame.job_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
+    part_entry.bind("<FocusIn>", on_entry_focus)
+    
+    reconfigure_button = tk.Button(input_frame, text="Re-Configure", width=12, height=1, font=label_font, command=on_part_reconfigure)
+    reconfigure_button.grid(row=input_frame.job_row, column=3, padx=standard_padx, pady=standard_pady)
     
     lbl_op = tk.Label(master=input_frame, text="Operator", font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_op = tk.StringVar(value=op_value)
     ent_op = tk.Entry(master=input_frame, textvariable=var_op, width=50)
-    ent_op.grid(row=input_frame.op_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
+    ent_op.grid(row=input_frame.op_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
     
     lbl_comments = tk.Label(master=input_frame, text="Comments", font=label_font)
     lbl_comments.grid(row=input_frame.comm_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_comm = tk.StringVar(value=comm_value)
     ent_comments = tk.Entry(master=input_frame, textvariable=var_comm, width=50)
-    ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=standard_padx, pady=standard_pady)
+    ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
 
     # Run button section
     btn_run = tk.Button(master=input_frame, text="Run", width=25, height=1, command=start_test_thread, font=label_font)
@@ -749,7 +1014,7 @@ def UI():
     
     # Bind the closing protocol
     window.protocol("WM_DELETE_WINDOW", on_closing)
-    launch_secondary_ui()
+    launch_secondary_ui(ent_job_top)
 
     # Enhanced ttk styling for Automation1 look
     style = ttk.Style()
@@ -794,7 +1059,7 @@ def UI():
     }
 
     # Apply entry style to all entry fields
-    for entry in [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_job, ent_op, ent_comments]:
+    for entry in [ent_job_top, ent_smart_string, part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_op, ent_comments]:
         entry.configure(**entry_style)
 
     # Main input fields (darker text)
@@ -851,8 +1116,8 @@ def UI():
     }
 
     # Define main input fields
-    main_input_labels = [lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, lbl_cycles, lbl_job, lbl_op, lbl_comments]  # Main input labels
-    main_input_entries = [part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_job, ent_op, ent_comments]  # Their corresponding entry fields
+    main_input_labels = [lbl_job_top, lbl_smart_string, lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, lbl_cycles, lbl_bus, lbl_op, lbl_comments]  # Main input labels
+    main_input_entries = [ent_job_top, ent_smart_string, part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_op, ent_comments]  # Their corresponding entry fields
     
     # First apply base styles to all widgets
     for widget in input_frame.winfo_children():
@@ -910,6 +1175,12 @@ def UI():
         pady=8
     )
     
+    reconfigure_button.configure(
+        **action_button_style,
+        padx=10,
+        pady=8
+    )
+    
     # Configure frames with consistent borders
     input_frame.configure(
         bg=BACKGROUND,
@@ -957,6 +1228,9 @@ def UI():
     
     sep4 = tk.Frame(master=input_frame, height=1, bg=BORDER)
     sep4.grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    # Set initial focus to job number entry
+    window.after(200, lambda: (ent_job_top.focus_set(), ent_job_top.select_range(0, tk.END)))
     
     window.mainloop()
     
