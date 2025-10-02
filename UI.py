@@ -60,6 +60,7 @@ allocated_stations = []
 previously_allocated_stations = set()
 # part_entry is now local to UI function
 BI_state = 'default'  # Added global BI_state variable with default value
+speed_state = 'default'  # Speed mode: 'default' or 'manual'
 bus_volt = "80"
 
 # JSON file path to store user inputs
@@ -591,7 +592,11 @@ def UI():
         
         stage_type = str(part_number.get())
         num_axes = int(var_num_axes.get())
-        speed = float(var_speed.get())
+        # Pass 'default' when Default mode is selected; otherwise pass manual numeric value
+        if speed_mode_var.get() == 'default':
+            speed = 'default'
+        else:
+            speed = float(var_speed.get())
         job = str(var_job.get())
         op = str(var_op.get())
         comm = str(var_comm.get())
@@ -846,16 +851,28 @@ def UI():
         else:
             bus_volt = "160"
         
-    def time_def():
-        global BI_state
-        if time_var.get() == 'default':
-            ent_other["state"] = tk.DISABLED
-            BI_state = 'default'
-        elif time_var.get() == 'other':
-            ent_other["state"] = tk.NORMAL
-            BI_state = 'other'
+def time_def():
+    global BI_state
+    if time_var.get() == 'default':
+        ent_other["state"] = tk.DISABLED
+        BI_state = 'default'
+    elif time_var.get() == 'other':
+        ent_other["state"] = tk.NORMAL
+        BI_state = 'other'
+
+
+def speed_def():
+    """Toggle manual speed entry enabled/disabled based on selection."""
+    global speed_state
+    if speed_mode_var.get() == 'default':
+        ent_speed["state"] = tk.DISABLED
+        speed_state = 'default'
+    else:
+        ent_speed["state"] = tk.NORMAL
+        speed_state = 'manual'
     
-    def abs_def():
+
+def abs_def():
         global absolute
         if abs_var.get() == "Yes":
             absolute = True
@@ -910,13 +927,42 @@ def UI():
     abs_ent = tk.Radiobutton(master=input_frame, text="Yes", variable=abs_var, value="Yes", command=abs_def)
     abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=standard_padx, pady=standard_pady)
 
-    # Test Parameters section
+# Test Parameters section
     lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=standard_padx, pady=standard_pady)
     
+    # Speed selection: Default vs Manual, with entry enabled when Manual is selected
+    speed_mode_var = tk.StringVar(value='default')
     var_speed = tk.DoubleVar(value=speed_value)
-    ent_speed = tk.Entry(master=input_frame, textvariable=var_speed, width=15)
-    ent_speed.grid(row=input_frame.speed_row, column=1, padx=standard_padx, pady=standard_pady)
+    
+    # Use a subframe to keep both radios and the entry in column 1, preserving duty cycle layout
+    speed_frame = tk.Frame(master=input_frame, bg=BACKGROUND)
+    speed_frame.grid(row=input_frame.speed_row, column=1, padx=standard_padx, pady=standard_pady, sticky='w')
+    
+    default_speed_radio = tk.Radiobutton(master=speed_frame, text="Default", variable=speed_mode_var, value='default', command=speed_def)
+    manual_speed_radio = tk.Radiobutton(master=speed_frame, text="Manual", variable=speed_mode_var, value='manual', command=speed_def)
+    
+    # Place radios side-by-side
+    default_speed_radio.grid(row=0, column=0, padx=(0, 8), pady=(0, 4), sticky='w')
+    manual_speed_radio.grid(row=0, column=1, padx=(0, 0), pady=(0, 4), sticky='w')
+    
+    # Manual speed entry (disabled by default)
+    ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=15, state=tk.DISABLED)
+    ent_speed.grid(row=1, column=0, columnspan=2, sticky='w')
+
+    # Initialize to default mode explicitly
+    try:
+        speed_mode_var.set('default')
+        speed_def()
+    except Exception:
+        pass
+    
+    # Style the new radios to match existing style
+    try:
+        default_speed_radio.configure(**radio_style)
+        manual_speed_radio.configure(**radio_style)
+    except Exception:
+        pass
     
     lbl_duty_cycle = tk.Label(master=input_frame, text="Duty Cycle", font=label_font)
     lbl_duty_cycle.grid(row=input_frame.speed_row, column=2, padx=standard_padx, pady=standard_pady)
