@@ -1763,18 +1763,18 @@ class stage_checkout():
                 controller = self.station_controllers[axis]
                 stage_units = controller.runtime.parameters.axes[axis].units.unitsname.value
         
-                   home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
+                home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
                 if home_speed >= 10:    
                     home_speed = 10
             
-                   if stage_units != 'deg':
+                if stage_units != 'deg':
                     print(f'Changing home type for {axis}')
                     self.params(controller, axis, home_setup=1, home_speed=home_speed) 
                 else:
                     self.params(controller, axis, home_setup=2, home_speed=home_speed)
-                print("Changing home speed")
+            print("Changing home speed")
         
-               for axis in self.test_axes:
+            for axis in self.test_axes:
                 controller = self.station_controllers[axis]
                 print(f'Home type for {axis} changed to {controller.runtime.parameters.axes[axis].homing.hometype.value}')
             time.sleep(5)
