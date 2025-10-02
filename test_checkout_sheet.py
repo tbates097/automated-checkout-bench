@@ -41,15 +41,13 @@ def parse_axes(axes_arg: str):
     return norm or ["ST01"]
 
 
-def build_sample_data(axes, technician, date_str, halls, marker, limits,
+def build_flat_sample_data(technician, date_str, halls, marker, limits,
                      total_travel, home_marker_from_limit, home_offset,
-                     abs_at_ccw_eot, abs_pos_offset):
+                     abs_at_ccw_eot, abs_pos_offset, include_absolute: bool = False):
     """Builds a flat key/value map matching column A labels in the sheet.
 
-    Notes:
-    - The sheet expects exact label matches in column A.
-    - "Absoloute Position Offset" is intentionally spelled to match the sheet export.
-    - Multiple axes are not represented in the template; we populate generic fields.
+    When include_absolute is False, omit absolute-only fields to mimic skipping
+    checkout_test's absolute section.
     """
     data = {
         "Testing Technician": technician,
@@ -60,10 +58,39 @@ def build_sample_data(axes, technician, date_str, halls, marker, limits,
         "Total Travel": total_travel,
         "Home Marker from Limit": home_marker_from_limit,
         "Home Offset": home_offset,
-        "Absolute value at CCW EOT": abs_at_ccw_eot,
-        "Absoloute Position Offset": abs_pos_offset,
     }
+    if include_absolute:
+        # Keep legacy misspelling only for flat mode if needed
+        data["Absolute value at CCW EOT"] = abs_at_ccw_eot
+        data["Absoloute Position Offset"] = abs_pos_offset
     return data
+
+def build_nested_sample_data(axes, technician, date_str, halls, marker, limits,
+                     total_travel, home_marker_from_limit, home_offset,
+                     abs_at_ccw_eot, abs_pos_offset, include_absolute: bool = False):
+    """Builds a nested per-axis dict mirroring checkout_test.py usage.
+
+    Keys match those used in checkout_test. When include_absolute is False,
+    omit absolute-only fields to mimic skipping checkout_test's absolute section.
+    """
+    nested = {}
+    for axis in axes:
+        per_axis = {
+            "Testing Technician": technician,
+            "Date of Testing": date_str,
+            "Halls": halls,
+            "Marker": marker,
+            "Limits": limits,
+            "Total Travel": total_travel,
+            "Home Marker from Limit": home_marker_from_limit,
+            "Home Offset": home_offset,
+        }
+        if include_absolute:
+            per_axis["Absolute value at CCW EOT"] = abs_at_ccw_eot
+            # Note: Correct spelling here to match checkout_test.py
+            per_axis["Absolute Position Offset"] = abs_pos_offset
+        nested[axis] = per_axis
+    return nested
 
 
 def run_checkout(job, data, fail_on_log_error=False, error_pattern="Error processing response"):
@@ -100,7 +127,10 @@ def run_checkout(job, data, fail_on_log_error=False, error_pattern="Error proces
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Standalone tester for Checkout_Sheet with example axis data"
+        description=(
+            "Standalone tester for Checkout_Sheet. Can build data in a nested, per-axis structure "
+            "to mirror checkout_test.py without running BurnIn."
+        )
     )
     parser.add_argument("--job", required=True, help="Job/serial number to pass to Checkout_Sheet")
     parser.add_argument("--axes", default="ST01", help="Comma/space-separated list of axes (e.g., 'ST01,ST02' or '1 2')")
@@ -120,29 +150,50 @@ def main():
     parser.add_argument("--print-only", action="store_true", help="Print the payload but do not call Google Sheets")
     parser.add_argument("--fail-on-log-error", action="store_true", help="Fail if Checkout_Sheet prints a known error line (e.g., 'Error processing response')")
     parser.add_argument("--log-error-pattern", default="Error processing response", help="Substring to detect in captured output that should trigger failure when --fail-on-log-error is set")
+    parser.add_argument("--structure", choices=["nested", "flat"], default="nested", help="Data layout: 'nested' mirrors checkout_test.py; 'flat' is a single map")
+    parser.add_argument("--absolute", action="store_true", help="Include absolute-branch fields (default: skip absolute section)")
 
     args = parser.parse_args()
 
     axes = parse_axes(args.axes)
     date_str = args.date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    data = build_sample_data(
-        axes=axes,
-        technician=args.technician,
-        date_str=date_str,
-        halls=args.halls,
-        marker=args.marker,
-        limits=args.limits,
-        total_travel=args.total_travel,
-        home_marker_from_limit=args.home_marker_from_limit,
-        home_offset=args.home_offset,
-        abs_at_ccw_eot=args.abs_ccw,
-        abs_pos_offset=args.abs_offset,
-    )
+    include_absolute = bool(args.absolute)
+    if args.structure == "nested":
+        data = build_nested_sample_data(
+            axes=axes,
+            technician=args.technician,
+            date_str=date_str,
+            halls=args.halls,
+            marker=args.marker,
+            limits=args.limits,
+            total_travel=args.total_travel,
+            home_marker_from_limit=args.home_marker_from_limit,
+            home_offset=args.home_offset,
+            abs_at_ccw_eot=args.abs_ccw,
+            abs_pos_offset=args.abs_offset,
+            include_absolute=include_absolute,
+        )
+    else:
+        data = build_flat_sample_data(
+            technician=args.technician,
+            date_str=date_str,
+            halls=args.halls,
+            marker=args.marker,
+            limits=args.limits,
+            total_travel=args.total_travel,
+            home_marker_from_limit=args.home_marker_from_limit,
+            home_offset=args.home_offset,
+            abs_at_ccw_eot=args.abs_ccw,
+            abs_pos_offset=args.abs_offset,
+            include_absolute=include_absolute,
+        )
 
     print("--- Test Payload ---")
     print(f"Job: {args.job}")
     print(f"Axes: {axes}")
+    print(f"Structure: {args.structure}")
+    print(f"Absolute mode: {args.absolute}")
     print(f"Data: {data}")
 
     if args.print_only:
