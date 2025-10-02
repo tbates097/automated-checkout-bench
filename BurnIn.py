@@ -382,6 +382,7 @@ class burn_in():
                     [self.list_commands[self.test_axes.index(axis)]], 
                     [speed[self.test_axes.index(axis)]]
                 )
+                controller.runtime.commands.motion.waitformotiondone([axis])
             except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
@@ -396,15 +397,15 @@ class burn_in():
             
             time.sleep(dwell)
             
-            try:
-                controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException) as e:
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    self.handle_faults(faults_per_axis)
-                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-            except TestSequenceAbort as e:
-                return
+            #try:
+            #    controller.runtime.commands.motion.waitformotiondone([axis])
+            #except (ControllerAxisFaultException, ControllerOperationException) as e:
+            #    faults_per_axis = self.check_for_faults(controller, [axis])
+            #    if faults_per_axis:
+            #        self.handle_faults(faults_per_axis)
+            #        raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
+            #except TestSequenceAbort as e:
+            #    return
 
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
@@ -430,6 +431,7 @@ class burn_in():
                     [self.list_commands[self.test_axes.index(axis)] * -1],  # Negative for reverse
                     [speed[self.test_axes.index(axis)]]
                 )
+                controller.runtime.commands.motion.waitformotiondone([axis])
             except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
@@ -444,15 +446,15 @@ class burn_in():
             
             time.sleep(dwell)
             
-            try:
-                controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException) as e:
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    self.handle_faults(faults_per_axis)
-                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-            except TestSequenceAbort as e:
-                return
+            #try:
+            #    controller.runtime.commands.motion.waitformotiondone([axis])
+            #except (ControllerAxisFaultException, ControllerOperationException) as e:
+            #    faults_per_axis = self.check_for_faults(controller, [axis])
+            #    if faults_per_axis:
+            #        self.handle_faults(faults_per_axis)
+            #        raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
+            #except TestSequenceAbort as e:
+            #    return
 
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
