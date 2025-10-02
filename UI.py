@@ -945,8 +945,11 @@ def UI():
     manual_speed_radio.grid(row=0, column=1, padx=(0, 0), pady=(0, 4), sticky='w')
     
     # Manual speed entry (disabled by default)
-    ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=15, state=tk.DISABLED)
+    ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=10, state=tk.DISABLED)
     ent_speed.grid(row=1, column=0, columnspan=2, sticky='w')
+
+    # Ensure the row is tall enough to display radios + entry
+    input_frame.rowconfigure(input_frame.speed_row, minsize=60)
 
     # Initialize to default mode explicitly
     try:
