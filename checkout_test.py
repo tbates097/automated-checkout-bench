@@ -370,6 +370,23 @@ class stage_checkout():
         self.station_controllers = station_controllers
         self.reenable_run_button = reenable_run_button
         self.reenable_run_button()
+
+        # Resolve default burn-in speed if requested (compute as 1/4 of MaxJogSpeed)
+        try:
+            if isinstance(self.speed, str) and self.speed.lower() == 'default':
+                if not self.test_axes:
+                    raise ValueError("No test axes available to compute default speed")
+                axis = self.test_axes[0]
+                controller = self.station_controllers[axis]
+                max_jog = controller.runtime.parameters.axes[axis].motion.maxjogspeed.value
+                self.speed = float(max_jog) / 4.0
+                sid = self.axis_to_station_map.get(axis)
+                self.station_print(f"Using default burn-in speed = 1/4 of MaxJogSpeed for {axis}: {max_jog} -> {self.speed}", station_id=sid)
+        except Exception as e:
+            sid_list = [self.axis_to_station_map[a] for a in self.test_axes] if self.test_axes else None
+            self.station_print(f"Failed to compute default burn-in speed: {e}", station_id=sid_list)
+            raise
+
         # Initialize data dictionary for each axis
 
         station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
