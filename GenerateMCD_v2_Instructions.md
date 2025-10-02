@@ -6,8 +6,7 @@ GenerateMCD v2.0 provides a flexible, reusable architecture for working with Aer
 
 ## 🚀 Key Features
 
-- **Separated Configurations**: Clean split between mechanical (`specs_dict`) and electrical (`electrical_dict`) options
-- **Drive-Specific Templates**: Auto-discovers and uses appropriate templates (iXA4, XC4e, XR3, MS, etc.)
+- **Drive-Specific Templates**: Auto-discovers and uses appropriate templates (iXA4, XC4e, XR3, etc.)
 - **Comprehensive Validation**: Validates configurations before processing
 - **Template Discovery**: Auto-scans available drive types and provides drive information
 - **Backward Compatibility**: Existing code continues to work
@@ -62,7 +61,7 @@ specs_dict = {
 GenerateMCD v2.0 automatically scans for drive-specific templates:
 
 ### Available Drive Types
-- **iXA4**: Multi-axis servo drive (`iXA4_Template.json`)
+- **iXA4**: Multi-axis discrete drive (`iXA4_Template.json`)
 - **XC4e**: Single-axis drive (`XC4e_Template.json`)
 - **XR3**: Multi-axis rack (`XR3_Template.json`)  
 - **MS**: Generic template (`MS_Template.json`)
@@ -84,13 +83,14 @@ print(f"Template exists: {drive_info['template_exists']}")
 
 ### Important: Variable Naming Convention
 
-⚠️ **NEVER use `controller` as a variable name** - this is reserved for actual Automation1 controller objects.
+⚠️ **NEVER use `controller` as a variable name** - this is typically used for actual Automation1 controller objects.
 
 ✅ **Use these instead:** `mcd_processor`, `mcd_handler`, `mcd_generator`
 
 ### Basic Usage Pattern
 
 ```python
+sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
 from GenerateMCD_v2 import AerotechController
 
 # 1. Create the processor
