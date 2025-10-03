@@ -93,6 +93,7 @@ class burn_in():
             )
         
         self.aborted_stations = []
+        self.data_lock = threading.Lock()
         
     def station_print(self, message, station_id=None, overwrite=False):
         """Print a message to specific station(s) text_widget or all stations."""
@@ -262,19 +263,26 @@ class burn_in():
                     return
         except TestSequenceAbort as e:
             raise
-        time.sleep(1)
+        time.sleep(3)
         
     def round_to_nearest(self, value, multiple):
         return round(value / multiple) * multiple
     
     def burn_in_data(self, cycle):
-        """Collect burn-in data for all axes in parallel."""
+        """Collect burn-in data for all axes in parallel, issuing motion once per cycle."""
         move_complete = threading.Event()
+        start_barrier = threading.Barrier(len(self.test_axes) + 1)
         
         def execute_moves():
-            self.forward_move(self.dwell, self.list_velocity)
-            self.reverse_move(self.dwell, self.list_velocity)
-            move_complete.set()
+            try:
+                # Wait until all collectors have started data collection
+                start_barrier.wait()
+                # Execute the shared motion sequence once for all axes
+                self.forward_move(self.dwell, self.list_velocity)
+                self.reverse_move(self.dwell, self.list_velocity)
+            finally:
+                # Ensure the event is set even if an exception occurs, so collector threads don't hang
+                move_complete.set()
         
         def collect_axis_data(axis):
             controller = self.station_controllers[axis]
@@ -285,32 +293,40 @@ class burn_in():
             freq = a1.DataCollectionFrequency.Frequency1kHz
             data_config = self.data_config(n, freq, axis)
             
-            # Start data collection
+            # Start data collection first so the entire motion is captured
             controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
             
-            self.forward_move(self.dwell, self.list_velocity)
-            self.reverse_move(self.dwell, self.list_velocity)
-            #move_complete.wait()
-            # Get results
+            # Signal that this collector is ready and wait for motion to begin
+            start_barrier.wait()
+            
+            # Wait for the shared motion to complete
+            move_complete.wait()
+            
+            # Retrieve results for this axis
             results = controller.runtime.data_collection.get_results(data_config, n)
             data_sample = self.populate(results, axis)
             
-            with threading.Lock():
+            # Store data sample for this axis and cycle with a shared lock
+            with self.data_lock:
                 if cycle not in self.axis_data:
                     self.axis_data[cycle] = {}
                 self.axis_data[cycle][axis] = data_sample
         
-        # Start data collection threads
-        threads = []
+        # Launch data collection threads for each axis
+        collector_threads = []
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=collect_axis_data, axis=axis, args=(axis,))
-            threads.append(thread)
+            collector_threads.append(thread)
             thread.start()
         
-        # Wait for all threads to complete
-        for thread in threads:
+        # Start shared motion once for all axes
+        move_thread = self.create_tracked_thread(target=execute_moves)
+        move_thread.start()
+        
+        # Wait for collectors, then ensure motion thread finished
+        for thread in collector_threads:
             thread.join()
-        #move_thread.join()
+        move_thread.join()
 
     def four_hour_burnin(self):
         """Execute burn-in process with proper cycle counting for parallel operations."""
@@ -386,26 +402,15 @@ class burn_in():
             except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
+                    # Interactive per-axis handling; do not abort whole sequence here
                     self.handle_faults(faults_per_axis)
-                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
+                return
             except TestSequenceAbort as e:
                 return
             
-            # Check again before waiting
+            # Check again before continuing
             if station_id in self.aborted_stations:
                 raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-            
-            time.sleep(dwell)
-            
-            #try:
-            #    controller.runtime.commands.motion.waitformotiondone([axis])
-            #except (ControllerAxisFaultException, ControllerOperationException) as e:
-            #    faults_per_axis = self.check_for_faults(controller, [axis])
-            #    if faults_per_axis:
-            #        self.handle_faults(faults_per_axis)
-            #        raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-            #except TestSequenceAbort as e:
-            #    return
 
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
@@ -435,26 +440,15 @@ class burn_in():
             except (ControllerAxisFaultException, ControllerOperationException) as e:
                 faults_per_axis = self.check_for_faults(controller, [axis])
                 if faults_per_axis:
+                    # Interactive per-axis handling; do not abort whole sequence here
                     self.handle_faults(faults_per_axis)
-                    raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
+                return
             except TestSequenceAbort as e:
                 return
         
-            # Check again before waiting
+            # Check again before continuing
             if station_id in self.aborted_stations:
                 raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-            
-            time.sleep(dwell)
-            
-            #try:
-            #    controller.runtime.commands.motion.waitformotiondone([axis])
-            #except (ControllerAxisFaultException, ControllerOperationException) as e:
-            #    faults_per_axis = self.check_for_faults(controller, [axis])
-            #    if faults_per_axis:
-            #        self.handle_faults(faults_per_axis)
-            #        raise TestSequenceAbort(f"Axis {axis} has faults: {faults_per_axis}")
-            #except TestSequenceAbort as e:
-            #    return
 
         for axis in self.test_axes:
             thread = self.create_tracked_thread(target=move_axis, axis=axis, args=(axis,))
@@ -545,18 +539,48 @@ class burn_in():
         return faults
     
     def handle_faults(self, faults_per_axis):
-        """Handle faults for specific axes."""
-        for axis, faults in faults_per_axis.items():
-            controller = self.station_controllers[axis]
-            fault_init = decode_faults({axis: faults}, [axis], controller, self.fault_log)
-            decoded_faults = fault_init.get_fault()
-            
-            if decoded_faults[axis]:
-                messagebox.showerror(
-                    'An Axis Fault Occurred',
-                    f'Axis {axis} has the following faults: {decoded_faults[axis]}'
+        """Handle faults per axis with interactive continue/abort. Acknowledges via DecodeFaults."""
+        try:
+            for axis, faults in faults_per_axis.items():
+                # Axis may have already been removed
+                controller = self.station_controllers.get(axis)
+                if not controller:
+                    continue
+                
+                # Decode and auto-acknowledge faults on this axis's controller
+                fault_init = decode_faults({axis: faults}, [axis], controller, self.fault_log)
+                decoded_faults = fault_init.get_fault()
+                fault_list = decoded_faults.get(axis, [])
+                if not fault_list:
+                    # Nothing to act on after ack
+                    continue
+                
+                # Prompt user: continue (keep axis) or abort axis
+                confirm = messagebox.askyesno(
+                    'Axis Fault Detected',
+                    f'Axis {axis} has the following faults: {fault_list}.\n\nWould you like to continue testing this axis?'
                 )
-                self.fault_log.error(f"Burn-in error on axis {axis}: {decoded_faults[axis]}")
+                if confirm:
+                    # Attempt to re-enable axis and continue
+                    try:
+                        controller.runtime.commands.motion.enable([axis])
+                    except Exception:
+                        pass
+                    self.stage_info.info(f"Continuing after acknowledging faults on axis {axis}: {fault_list}")
+                    continue
+                else:
+                    # Remove only this axis from burn-in
+                    self.stage_info.info(f"User chose to abort axis {axis} after faults: {fault_list}")
+                    try:
+                        self.handle_burnin_error("Axis fault - user chose to abort axis", axis)
+                    except Exception:
+                        pass
+            
+            # If no axes remain, stop the test sequence
+            if not self.test_axes:
+                raise TestSequenceAbort("All axes have been removed from burn-in.", shown_message=True)
+        except TestSequenceAbort:
+            raise
 
     def _log_cycle_progress(self, cycle):
         """Log cycle progress to file and update UI for each station."""

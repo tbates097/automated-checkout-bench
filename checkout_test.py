@@ -604,7 +604,12 @@ class stage_checkout():
                             )
                         BI.initialize_burnin(self.station_controllers)
 
-                        for idx, axis in enumerate(self.test_axes, start=1):
+                        time.sleep(5)
+                        self.home_stages()
+                    except TestSequenceAbort:
+                        raise
+
+                    for idx, axis in enumerate(self.test_axes, start=1):
                             # Create per-axis flat data dictionary (what Checkout_Sheet expects)
                             axis_data = {
                                 "Testing Technician": self.data[axis]["Testing Technician"],
@@ -622,11 +627,6 @@ class stage_checkout():
                             checkout_sheet = Checkout_Sheet(job_with_suffix, axis_data)
                             checkout_sheet.duplicate_sheet()
                             checkout_sheet.populate_sheet()
-
-                        time.sleep(5)
-                        self.home_stages()
-                    except TestSequenceAbort:
-                        raise
 
                 else:
                     try:
@@ -1018,8 +1018,12 @@ class stage_checkout():
                     raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                     
                 faults_per_axis = self.check_for_faults(controller, [axis])
-                fault_init = decode_faults(faults_per_axis, self.test_axes, self.controller, self.fault_log)
-                decoded_faults = fault_init.get_fault()
+                # Decode and log using the correct per-axis controller; may adjust test flow elsewhere
+                try:
+                    fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                    _ = fault_init.get_fault()
+                except Exception:
+                    pass
                 
         try:
             # Start enable threads
@@ -1336,8 +1340,31 @@ class stage_checkout():
                     del self.station_controllers[axis]
                 return
             
-            # If we get here, fallback succeeded - axis remains in testing for remaining tests
-            self.station_print(f"Hall check completed successfully for axis {axis} using fallback method", station_id=station_id)
+            # If we get here, fallback succeeded - process results and populate data
+            # Build observed states and encoder values in the expected angle order
+            angles = [0, 60, 120, 180, 240, 300]
+            observed_states = []
+            encoder_values = []
+            if axis in self.hall_states:
+                for ang in angles:
+                    if ang in self.hall_states[axis]:
+                        observed_states.append(self.hall_states[axis][ang])
+                        if axis in self.hall_encoder_positions and ang in self.hall_encoder_positions[axis]:
+                            encoder_values.append(self.hall_encoder_positions[axis][ang])
+            
+            encoder_direction = "unknown"
+            if len(encoder_values) >= 2:
+                encoder_direction = "positive" if encoder_values[-1] > encoder_values[0] else "negative"
+            expected_states = []
+            for i in range(len(observed_states)):
+                expected_states.append(self.hall_dict[angles[i]])
+            hall_order_valid = (encoder_direction == "positive" and observed_states == expected_states)
+            unique_hall_states = []
+            for s in observed_states:
+                if not unique_hall_states or unique_hall_states[-1] != s:
+                    unique_hall_states.append(s)
+            
+            self.process_hall_results(axis, station_id, observed_states, encoder_values, hall_order_valid, encoder_direction, unique_hall_states)
             
         except TestSequenceAbort:
             raise
@@ -1498,78 +1525,35 @@ class stage_checkout():
                 
                 self.populate(axis, axis_results)
                 
-                sequence = []
-                # Validate State at each Angle
-                for electrical_angle, hall_state in self.hall_states[axis].items():
-                    if hall_state == self.hall_dict[electrical_angle]:
-                        sequence.append(hall_state)
-                    else:
-                        self.station_print(f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}", station_id=station_id)
-                        self.log_only(f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}", station_id=station_id)
-                        messagebox.showerror("Hall State Mismatch", f"Hall state mismatch on axis {axis} at angle {electrical_angle}: {hall_state} != {self.hall_dict[electrical_angle]}")
-
-                        self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
-                        if axis in self.test_axes:
-                            self.test_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
+                # Build observed states and encoder values in the expected angle order
+                angles = [0, 60, 120, 180, 240, 300]
+                observed_states = []
+                encoder_values = []
+                for ang in angles:
+                    if axis in self.hall_states and ang in self.hall_states[axis]:
+                        observed_states.append(self.hall_states[axis][ang])
+                        if axis in self.hall_encoder_positions and ang in self.hall_encoder_positions[axis]:
+                            encoder_values.append(self.hall_encoder_positions[axis][ang])
                 
-                # Validate Encoder Direction
-                start_pos = self.hall_encoder_positions[axis][0]
-                end_pos = self.hall_encoder_positions[axis][300]
-                encoder_direction = "positive" if end_pos > start_pos else "negative"
+                # Compute encoder direction using first/last available values
+                encoder_direction = "unknown"
+                if len(encoder_values) >= 2:
+                    encoder_direction = "positive" if encoder_values[-1] > encoder_values[0] else "negative"
                 
-                if encoder_direction == "negative":
-                    self.station_print(f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.", station_id=station_id)
-                    self.log_only(f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.", station_id=station_id)
-                    messagebox.showerror("Encoder Direction Mismatch", f"Encoder direction mismatch on axis {axis}. Please check encoder wiring.")
-
-                    self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
-                    if axis in self.test_axes:
-                        self.test_axes.remove(axis)
-                    if axis in self.station_controllers:
-                        del self.station_controllers[axis]
-
-                # Validate Hall Sequence
-                if encoder_direction == "positive":
-                    expected_order_cw = ["001", "011", "010", "110", "100", "101"]
-                    if sequence == expected_order_cw:
-                        self.station_print(f"Hall sequence is correct on axis {axis}", station_id=station_id)
-                        self.log_only(f"Hall sequence is correct on axis {axis}", station_id=station_id)
-                    else:
-                        self.station_print(f"Hall sequence is incorrect on axis {axis}", station_id=station_id)
-                        self.log_only(f"Hall sequence is incorrect on axis {axis}", station_id=station_id)
-                        messagebox.showerror("Hall Sequence Mismatch", f"Hall sequence is incorrect on axis {axis}")
-
-                        self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
-                        if axis in self.test_axes:
-                            self.test_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
-
-                # Check Commutation Offset
-                for i, e in self.hall_states[axis].items():
-                    if e != self.hall_dict[i]:
-                        correct_angle = self.hall_dict[e]
-                        commutation_offset = abs(i - correct_angle)
-                        self.station_print(f"Commutation offset on axis {axis} is {commutation_offset} degrees.", station_id=station_id)
-                        self.log_only(f"Commutation offset on axis {axis} is {commutation_offset} degrees.", station_id=station_id)
-                        messagebox.showerror("Commutation Offset", f"Commutation offset on axis {axis} is {commutation_offset} degrees. Please click OK to continue.")
-
-                        self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
-                        if axis in self.test_axes:
-                            self.test_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
-                        break
-
-                if not self.test_axes:
-                    error_msg = "Please address hall issues on affected axes. Ending test."
-                    messagebox.showerror("Test Sequence Aborted", error_msg)
-                    raise TestSequenceAbort(error_msg)   
-                else:
-                    self.station_print(f"Halls are correct for axis {axis}", station_id=station_id)
-                    self.log_only(f"Halls are correct for axis {axis}", station_id=station_id)
+                # Determine expected order for the angles we actually observed
+                expected_states = []
+                for i in range(len(observed_states)):
+                    expected_states.append(self.hall_dict[angles[i]])
+                hall_order_valid = (encoder_direction == "positive" and observed_states == expected_states)
+                
+                # Unique hall states in observation order (for logging)
+                unique_hall_states = []
+                for s in observed_states:
+                    if not unique_hall_states or unique_hall_states[-1] != s:
+                        unique_hall_states.append(s)
+                
+                # Centralized processing and data population
+                self.process_hall_results(axis, station_id, observed_states, encoder_values, hall_order_valid, encoder_direction, unique_hall_states)
             except TestSequenceAbort:
                 raise
 
@@ -2046,7 +2030,7 @@ class stage_checkout():
         time.sleep(2)
 
     def move_into_hardstop(self, controller, test, limit, axis):
-        """Move a single axis into its hardstop."""
+        """Move a single axis into its hardstop. Ignore faults (acknowledge and proceed)."""
         try:
             hard_to_hard = self.get_param_value('HardToHard-FirstContact')
             limit_to_limit = self.get_param_value('LimitToLimitTravel')
@@ -2083,10 +2067,12 @@ class stage_checkout():
                     controller.runtime.commands.fault_and_error.acknowledgeall(1)
                     time.sleep(2)
 
+            # Acknowledge any remaining faults (we ignore faults during hardstop by design)
             faults_per_axis = self.check_for_faults(controller, [axis])
             if faults_per_axis:
                 controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                time.sleep(2)        
+                time.sleep(2)
+
             time.sleep(10)
             
             controller.runtime.parameters.axes[axis][a1.AxisParameterId.MaxCurrentClamp].value = self.max_current_clamp
@@ -2251,7 +2237,7 @@ class stage_checkout():
             for i, bit in enumerate(self.ccw_fault[axis]):  # Access axis-specific data
                 if bit == 1:
                     end_position = position_feedback[i]
-                    self.data[axis]["Home Marker to Limit"] = round(end_position, 4)
+                    self.data[axis]["Home Marker from Limit"] = round(end_position, 4)
                     break
         else:
             # Combine signals into a dictionary for logging
