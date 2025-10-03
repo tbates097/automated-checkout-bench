@@ -851,28 +851,26 @@ def UI():
         else:
             bus_volt = "160"
         
-def time_def():
-    global BI_state
-    if time_var.get() == 'default':
-        ent_other["state"] = tk.DISABLED
-        BI_state = 'default'
-    elif time_var.get() == 'other':
-        ent_other["state"] = tk.NORMAL
-        BI_state = 'other'
+    def time_def():
+        global BI_state
+        if time_var.get() == 'default':
+            ent_other["state"] = tk.DISABLED
+            BI_state = 'default'
+        elif time_var.get() == 'other':
+            ent_other["state"] = tk.NORMAL
+            BI_state = 'other'
 
-
-def speed_def():
-    """Toggle manual speed entry enabled/disabled based on selection."""
-    global speed_state
-    if speed_mode_var.get() == 'default':
-        ent_speed["state"] = tk.DISABLED
-        speed_state = 'default'
-    else:
-        ent_speed["state"] = tk.NORMAL
-        speed_state = 'manual'
+    def speed_def():
+        """Toggle manual speed entry enabled/disabled based on selection."""
+        global speed_state
+        if speed_mode_var.get() == 'default':
+            ent_speed["state"] = tk.DISABLED
+            speed_state = 'default'
+        else:
+            ent_speed["state"] = tk.NORMAL
+            speed_state = 'manual'
     
-
-def abs_def():
+    def abs_def():
         global absolute
         if abs_var.get() == "Yes":
             absolute = True
@@ -927,7 +925,7 @@ def abs_def():
     abs_ent = tk.Radiobutton(master=input_frame, text="Yes", variable=abs_var, value="Yes", command=abs_def)
     abs_ent.grid(row=input_frame.num_axes_row, column=3, padx=standard_padx, pady=standard_pady)
 
-# Test Parameters section
+    # Test Parameters section
     lbl_speed = tk.Label(master=input_frame, text="Burn-In Speed", font=label_font)
     lbl_speed.grid(row=input_frame.speed_row, column=0, padx=standard_padx, pady=standard_pady)
     
@@ -947,8 +945,11 @@ def abs_def():
     manual_speed_radio.grid(row=0, column=1, padx=(0, 0), pady=(0, 4), sticky='w')
     
     # Manual speed entry (disabled by default)
-    ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=15, state=tk.DISABLED)
+    ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=10, state=tk.DISABLED)
     ent_speed.grid(row=1, column=0, columnspan=2, sticky='w')
+
+    # Ensure the row is tall enough to display radios + entry
+    input_frame.rowconfigure(input_frame.speed_row, minsize=60)
 
     # Initialize to default mode explicitly
     try:

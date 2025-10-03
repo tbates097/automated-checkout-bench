@@ -604,8 +604,8 @@ class stage_checkout():
                             )
                         BI.initialize_burnin(self.station_controllers)
 
-                        for axis in self.test_axes:
-                            # Create per-axis data dictionary
+                        for idx, axis in enumerate(self.test_axes, start=1):
+                            # Create per-axis flat data dictionary (what Checkout_Sheet expects)
                             axis_data = {
                                 "Testing Technician": self.data[axis]["Testing Technician"],
                                 "Date of Testing": self.data[axis]["Date of Testing"],
@@ -617,8 +617,9 @@ class stage_checkout():
                                 "Home Offset": self.data[axis]["Home Offset"],
                                 "Absolute value at CCW EOT": self.data[axis]["Absolute value at CCW EOT"],
                                 "Absolute Position Offset": self.data[axis]["Absolute Position Offset"]
-                                }
-                            checkout_sheet = Checkout_Sheet(self.job, self.data)
+                            }
+                            job_with_suffix = f"{self.job}-{idx:02d}"
+                            checkout_sheet = Checkout_Sheet(job_with_suffix, axis_data)
                             checkout_sheet.duplicate_sheet()
                             checkout_sheet.populate_sheet()
 
@@ -630,7 +631,7 @@ class stage_checkout():
                 else:
                     try:
                         # Home Stages
-                        self.home_stages()
+                        self.home_stages(initial=True)
                         time.sleep(5)
                     except TestSequenceAbort:
                         raise
@@ -683,8 +684,8 @@ class stage_checkout():
                     except TestSequenceAbort:
                         raise
                     try:    
-                        for axis in self.test_axes:
-                            # Create per-axis data dictionary
+                        for idx, axis in enumerate(self.test_axes, start=1):
+                            # Create per-axis flat data dictionary (what Checkout_Sheet expects)
                             axis_data = {
                                 "Testing Technician": self.data[axis]["Testing Technician"],
                                 "Date of Testing": self.data[axis]["Date of Testing"],
@@ -696,8 +697,9 @@ class stage_checkout():
                                 "Home Offset": self.data[axis]["Home Offset"],
                                 "Absolute value at CCW EOT": self.data[axis]["Absolute value at CCW EOT"],
                                 "Absolute Position Offset": self.data[axis]["Absolute Position Offset"]
-                                }
-                            checkout_sheet = Checkout_Sheet(self.job, self.data)
+                            }
+                            job_with_suffix = f"{self.job}-{idx:02d}"
+                            checkout_sheet = Checkout_Sheet(job_with_suffix, axis_data)
                             checkout_sheet.duplicate_sheet()
                             checkout_sheet.populate_sheet()
                         
@@ -1746,7 +1748,7 @@ class stage_checkout():
         self.enable()
         self.home_stages()
 
-    def home_stages(self):
+    def home_stages(self, initial=False):
         """
         Home all stages in parallel based on encoder type.
         Handles homing or absolute positioning for each axis independently.
@@ -1755,26 +1757,27 @@ class stage_checkout():
         self.station_print('Homing Axes', station_id=station_id)
         test = 'homing'
         
-        print("Changing home type")
-        for axis in self.test_axes:
-            controller = self.station_controllers[axis]
-            stage_units = controller.runtime.parameters.axes[axis].units.unitsname.value
+        if initial:
+            print("Changing home type")
+            for axis in self.test_axes:
+                controller = self.station_controllers[axis]
+                stage_units = controller.runtime.parameters.axes[axis].units.unitsname.value
         
-            home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
-            if home_speed >= 10:    
-                home_speed = 10
+                home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
+                if home_speed >= 10:    
+                    home_speed = 10
             
-            if stage_units != 'deg':
-                print(f'Changing home type for {axis}')
-                self.params(controller, axis, home_setup=1, home_speed=home_speed) 
-            else:
-                self.params(controller, axis, home_setup=2, home_speed=home_speed)
+                if stage_units != 'deg':
+                    print(f'Changing home type for {axis}')
+                    self.params(controller, axis, home_setup=1, home_speed=home_speed) 
+                else:
+                    self.params(controller, axis, home_setup=2, home_speed=home_speed)
             print("Changing home speed")
         
-        for axis in self.test_axes:
-            controller = self.station_controllers[axis]
-            print(f'Home type for {axis} changed to {controller.runtime.parameters.axes[axis].homing.hometype.value}')
-        time.sleep(5)
+            for axis in self.test_axes:
+                controller = self.station_controllers[axis]
+                print(f'Home type for {axis} changed to {controller.runtime.parameters.axes[axis].homing.hometype.value}')
+            time.sleep(5)
 
         threads = []
         
