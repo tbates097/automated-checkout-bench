@@ -265,7 +265,7 @@ class stage_checkout():
 
     def get_spec_value(self, spec_key):
         """
-        Get a numerical value from specs_dict, handling both float and string formats.
+        Get a numerical value from specs_dict, handling int, float, and string formats.
         
         Args:
             spec_key (str): The key to look up in specs_dict
@@ -281,16 +281,18 @@ class stage_checkout():
             raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
         
         try:
-            return spec if isinstance(spec, float) else float(spec.split()[0])
-        except (AttributeError, ValueError) as e:
+            if isinstance(spec, (int, float)):
+                return float(spec)
+            return float(str(spec).split()[0])
+        except (AttributeError, ValueError, TypeError) as e:
             raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
     
     def get_param_value(self, spec_key):
         """
-        Get a numerical value from specs_dict, handling both float and string formats.
+        Get a numerical value from param_dict, handling int, float, and string formats.
         
         Args:
-            spec_key (str): The key to look up in specs_dict
+            spec_key (str): The key to look up in param_dict
             
         Returns:
             float: The numerical value
@@ -303,8 +305,10 @@ class stage_checkout():
             raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
         
         try:
-            return spec if isinstance(spec, float) else float(spec.split()[0])
-        except (AttributeError, ValueError) as e:
+            if isinstance(spec, (int, float)):
+                return float(spec)
+            return float(str(spec).split()[0])
+        except (AttributeError, ValueError, TypeError) as e:
             raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
 
     def create_tracked_thread(self, target, axis, station_id=None, args=()):
