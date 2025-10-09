@@ -1627,6 +1627,16 @@ class stage_checkout():
             
             self.process_hall_results(axis, station_id, observed_states, encoder_values, hall_order_valid, encoder_direction, unique_hall_states)
             
+            # Explicit per-axis summary to ensure visibility
+            try:
+                result = self.data.get(axis, {}).get("Halls")
+                if result:
+                    self.station_print(f"Halls result for {axis}: {result}", station_id=station_id)
+                else:
+                    self.station_print(f"Halls result for {axis}: Unknown (no explicit result recorded)", station_id=station_id)
+            except Exception:
+                pass
+            
         except TestSequenceAbort:
             raise
         except Exception as e:
@@ -1828,6 +1838,16 @@ class stage_checkout():
                 
                 # Centralized processing and data population
                 self.process_hall_results(axis, station_id, observed_states, encoder_values, hall_order_valid, encoder_direction, unique_hall_states)
+
+                # Explicit per-axis summary to ensure visibility
+                try:
+                    result = self.data.get(axis, {}).get("Halls")
+                    if result:
+                        self.station_print(f"Halls result for {axis}: {result}", station_id=station_id)
+                    else:
+                        self.station_print(f"Halls result for {axis}: Unknown (no explicit result recorded)", station_id=station_id)
+                except Exception:
+                    pass
             except TestSequenceAbort:
                 raise
 
@@ -2826,7 +2846,7 @@ class stage_checkout():
         else:
             # Build expected hall sequence for positive encoder direction
             base_angles = [0, 60, 120, 180, 240, 300]
-            expected_states = [self.hall_dict[a] for a in base_angles[:len(observed_states)]]
+            expected_states = [self.hall_dict[a] for a in base_angles[:len(hall_states)]]
 
             # Helper to check if observed is a rotation of expected
             def rotation_classification(exp, obs):
@@ -2837,7 +2857,7 @@ class stage_checkout():
                         return (True, k)
                 return (False, 0)
 
-            is_rot, shift_steps = rotation_classification(expected_states, observed_states)
+            is_rot, shift_steps = rotation_classification(expected_states, hall_states)
             if is_rot:
                 # Phasing misalignment: correct sequence rotated by shift_steps*60°
                 deg_shift = (shift_steps * 60) % 360
