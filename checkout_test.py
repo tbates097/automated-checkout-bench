@@ -1748,8 +1748,9 @@ class stage_checkout():
                     current = 0.5
                 
                 # Configure and start snapshot
+                n_samples = int(self.sample_rate * (base_delay + total_steps * settle_s + 0.05))
                 with _thread_lock:
-                    data_config = self.data_config(n=int(self.sample_rate * (base_delay + total_steps * settle_s + 0.05)),
+                    data_config = self.data_config(n=n_samples,
                                                   freq=a1.DataCollectionFrequency.Frequency1kHz,
                                                   axis=axis)
                 try:
@@ -1795,7 +1796,7 @@ class stage_checkout():
                         pass
                 
                 # Retrieve snapshot results
-                results = controller.runtime.data_collection.get_results(data_config, data_config.sample_count)
+                results = controller.runtime.data_collection.get_results(data_config, n_samples)
                 halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
                 pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
                 
@@ -1900,36 +1901,6 @@ class stage_checkout():
                 self.data[axis]["Halls"] = "Failed (sequence)"
                 self.release_axis(axis)
                 return
-            except TestSequenceAbort:
-                raise
-                    # Treat as sequencing/polarity issue and release only this axis
-                    self.release_axis(axis)
-                    return
-                
-                # Determine expected order for the angles we actually observed
-                expected_states = []
-                for i in range(len(observed_states)):
-                    expected_states.append(self.hall_dict[angles[i]])
-                hall_order_valid = (encoder_direction == "positive" and observed_states == expected_states)
-                
-                # Unique hall states in observation order (for logging)
-                unique_hall_states = []
-                for s in observed_states:
-                    if not unique_hall_states or unique_hall_states[-1] != s:
-                        unique_hall_states.append(s)
-                
-                # Centralized processing and data population
-                self.process_hall_results(axis, station_id, observed_states, encoder_values, hall_order_valid, encoder_direction, unique_hall_states)
-
-                # Explicit per-axis summary to ensure visibility
-                try:
-                    result = self.data.get(axis, {}).get("Halls")
-                    if result:
-                        self.station_print(f"Halls result for {axis}: {result}", station_id=station_id)
-                    else:
-                        self.station_print(f"Halls result for {axis}: Unknown (no explicit result recorded)", station_id=station_id)
-                except Exception:
-                    pass
             except TestSequenceAbort:
                 raise
 
