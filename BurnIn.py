@@ -140,8 +140,10 @@ class burn_in():
             raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
         
         try:
-            return spec if isinstance(spec, float) else float(spec.split()[0])
-        except (AttributeError, ValueError) as e:
+            if isinstance(spec, (int, float)):
+                return float(spec)
+            return float(str(spec).split()[0])
+        except (AttributeError, ValueError, TypeError) as e:
             raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
         
     def initialize_burnin(self, station_controllers):
@@ -150,6 +152,7 @@ class burn_in():
         
         self.list_commands = []
         self.list_velocity = []
+        print(f"Burn-In speed: {self.speed}")
         try:
             for axis in self.test_axes:
                 self.list_commands.append(self.nominal_travel / 2)
@@ -180,7 +183,7 @@ class burn_in():
             self.station_print(f"Burn-In Aborted: {str(e)}")
             messagebox.showerror("Burn-In Aborted", str(e))
         finally:
-            self.perform_burnin_cleanup()
+            return
 
     def movetostart(self):
         """Move all axes to their starting positions in parallel."""
@@ -229,6 +232,7 @@ class burn_in():
             raise  # Re-raise to stop the test sequence
 
     def increase_speed(self):
+        print(f"Burn-In speeds (increase speed): {self.list_velocity}")
         speed_increment = float(self.speed/5)      
         list_speed = [i-i for i in self.list_velocity]
         count = 1
@@ -334,7 +338,7 @@ class burn_in():
         self.stage_info.info(f'Burn in started for {self.job}, On Station(s): {", ".join(self.test_axes)}')
         
         self.axis_data = {}
-        
+        print(f"Burn-In speeds (4 hour burn in): {self.speed}, {self.list_velocity}")
         # Calculate timing parameters
         self.cycle_time = self.nominal_travel / self.speed
         self.dwell = self.calculate_dwell_time(self.cycle_time, self.duty_cycle)

@@ -1,17 +1,17 @@
 {
   "MechanicalProducts": [
     {
-      "Name": "PRO190LM",
+      "Name": "ANT95LZS",
       "DeviceCatalogItemGuid": null,
       "SecondaryDeviceCatalogItemGuid": null,
-      "DisplayName": "PRO190LM",
+      "DisplayName": "ANT95LZS",
       "SerialNumber": "",
       "WasAutoDetected": false,
       "ShouldExclude": false,
       "ConfiguredOptions": {
-        "Travel": "-0100",
+        "Travel": "-025",
         "Feedback": "-E1",
-        "Cable Management": "-CMS2"
+        "Mounting Plate": ""
       },
       "MechanicalAxes": []
     }
@@ -28,7 +28,7 @@
         "Axes": "-AX2",
         "Current Axes 1 and 2": "-20",
         "Current Axes 3 and 4": "",
-        "Bus Voltage": "80V",
+        "Bus Voltage": "40V",
         "Expansion Board": "-EB0",
         "Multiplier Axes 1 and 2": "-MX1",
         "Multiplier Axes 3 and 4": ""
@@ -41,7 +41,7 @@
       "Name": "ST02",
       "Index": 0,
       "MechanicalAxis": {
-        "DisplayName": "PRO190LM"
+        "DisplayName": "ANT95LZS"
       },
       "ElectricalAxis": {
         "DisplayName": "iXA4 Axis 1"
