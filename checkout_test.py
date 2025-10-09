@@ -186,12 +186,27 @@ class stage_checkout():
         time.sleep(0.5)
         
         # Now try to stop the axis
+        controller = None
         try:
             controller = self.station_controllers[axis]
             controller.runtime.commands.motion.abort([axis])
             controller.runtime.commands.motion.disable([axis])
         except Exception as e:
             self.station_print(f"Error during abort: {str(e)}", station_id=station_id)
+        
+        # If a controller exists, read and show decoded faults to the user
+        try:
+            if controller is not None:
+                faults_per_axis = self.check_for_faults(controller, [axis])
+                fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                decoded_faults = fault_init.get_fault()
+                fault_list = decoded_faults.get(axis, []) if isinstance(decoded_faults, dict) else []
+                fault_text = ", ".join(fault_list) if fault_list else str(decoded_faults)
+                if fault_text:
+                    messagebox.showerror("Axis Fault on Abort", f"Axis {axis} reported fault(s): {fault_text}")
+        except Exception:
+            # Non-fatal if fault decoding fails during abort
+            pass
         
         # Remove from active testing
         if axis in self.test_axes:
@@ -209,7 +224,7 @@ class stage_checkout():
                 sm.release_stations(axis)  # axis is like 'ST01'
         except Exception as e:
             self.station_print(f"Station release error: {str(e)}", station_id=station_id)
-
+        
         # Raise TestSequenceAbort if no axes remain
         if not self.test_axes:
             messagebox.showerror("Test Sequence Aborted", "All tests aborted by user.")
@@ -794,7 +809,7 @@ class stage_checkout():
             except Exception as e:
                 self.fault_log.error(f"Error during cleanup: {str(e)}")
         
-    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None, home_speed=None):
+    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None, home_speed=None, commutation_offset=None):
         """
         Configure parameters for a specific axis on its controller.
 
@@ -804,6 +819,9 @@ class stage_checkout():
             home_offset (int): The home offset value for the axis
             current_clamp (float): The maximum current clamp value
             limit (str): The fault mask limits (e.g., 'software on', 'software off')
+            home_setup (int): Homing type
+            home_speed (float): Homing speed
+            commutation_offset (float): Electrical degrees to offset commutation
         """
         # Retrieve current configuration parameters for the axis
         configured_parameters = controller.configuration.parameters.get_configuration()
@@ -828,6 +846,12 @@ class stage_checkout():
             
         if home_speed:
             configured_parameters.axes[axis].homing.homespeed.value = home_speed
+
+        if commutation_offset is not None:
+            try:
+                configured_parameters.axes[axis].motor.commutationoffset.value = float(commutation_offset)
+            except Exception as e:
+                self.station_print(f"Failed to set commutation offset for {axis}: {e}", station_id=self.axis_to_station_map.get(axis))
 
         # Apply the updated configuration for the axis
         controller.configuration.parameters.set_configuration(configured_parameters)
@@ -1104,6 +1128,142 @@ class stage_checkout():
                 except:
                     pass
             raise  # Re-raise to stop the test sequence
+
+    def read_hall_state_now(self, controller, axis):
+        """Read current Hall state bits as a 'abc' string (e.g., '100')."""
+        try:
+            ds = int(controller.runtime.parameters.axes[axis].drive.drivestatus.value)
+            hall_a = 1 if ((ds & a1.DriveStatus.HallAInput.value) > 0) else 0
+            hall_b = 1 if ((ds & a1.DriveStatus.HallBInput.value) > 0) else 0
+            hall_c = 1 if ((ds & a1.DriveStatus.HallCInput.value) > 0) else 0
+            return f"{hall_a}{hall_b}{hall_c}"
+        except Exception:
+            return None
+
+    def auto_commutation_offset(self, axis, step_deg=10, settle_s=0.15):
+        """
+        Sweep electrical angle at 10° steps, detect Hall transitions, compute a commutation
+        offset that aligns transitions to 60° boundaries, and offer to apply it.
+        Returns (applied: bool, delta_deg: float, mean_abs_err: float)
+        """
+        import math
+        controller = self.station_controllers.get(axis)
+        station_id = self.axis_to_station_map.get(axis)
+        if controller is None:
+            return (False, 0.0, 999.0)
+
+        # Determine a reasonable current for the tuning command
+        try:
+            current_threshold = controller.runtime.parameters.axes[axis].protection.averagecurrentthreshold.value
+            current = float(current_threshold) / 2.0 if current_threshold else 0.5
+        except Exception:
+            current = 0.5
+
+        # Enable and clear faults
+        try:
+            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+            controller.runtime.commands.motion.enable([axis])
+        except Exception:
+            pass
+
+        # Sweep and detect transitions
+        angles = list(range(0, 360, step_deg))
+        transition_angles = []
+        prev_code = None
+        try:
+            for ang in angles:
+                controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
+                time.sleep(settle_s)
+                code = self.read_hall_state_now(controller, axis)
+                if code is None:
+                    continue
+                if prev_code is not None and code != prev_code:
+                    transition_angles.append(float(ang % 360))
+                prev_code = code
+        except Exception as e:
+            self.station_print(f"Auto-phasing sweep error on {axis}: {e}", station_id=station_id)
+            return (False, 0.0, 999.0)
+        finally:
+            # Return to a safe state
+            try:
+                controller.runtime.commands.motion.abort([axis])
+                controller.runtime.commands.motion.enable([axis])
+            except Exception:
+                pass
+
+        if len(transition_angles) < 5:
+            messagebox.showwarning("Auto Phasing", f"Insufficient Hall transitions detected on {axis} for offset computation.")
+            return (False, 0.0, 999.0)
+
+        # Compute offset using circular mean of residues modulo 60°
+        residues = [a % 60.0 for a in transition_angles]
+        # Map to unit circle where 60° == 2π
+        angles_rad = [2 * math.pi * (r / 60.0) for r in residues]
+        C = sum(math.cos(th) for th in angles_rad)
+        S = sum(math.sin(th) for th in angles_rad)
+        if abs(C) < 1e-6 and abs(S) < 1e-6:
+            messagebox.showwarning("Auto Phasing", f"Could not compute a unique offset on {axis}.")
+            return (False, 0.0, 999.0)
+        mean_angle_rad = math.atan2(S, C)
+        delta_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
+
+        # Estimate residual misalignment after applying delta
+        def circ_dist_deg(x):
+            x = x % 60.0
+            return min(x, 60.0 - x)
+        residuals = [circ_dist_deg(a - delta_deg) for a in residues]
+        mean_abs_err = sum(residuals) / len(residuals)
+
+        msg = (
+            f"Axis {axis}: proposed commutation offset ≈ {delta_deg:.1f}°.\n"
+            f"Mean transition misalignment after apply ≈ {mean_abs_err:.1f}°.\n"
+            f"Apply and re-check halls?"
+        )
+        if not messagebox.askyesno("Auto Phasing Suggestion", msg):
+            return (False, float(delta_deg), float(mean_abs_err))
+
+        # Apply via configuration params (requires reset handled in params)
+        try:
+            self.params(controller, axis, commutation_offset=float(delta_deg))
+            # Re-enable after reset
+            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+            controller.runtime.commands.motion.enable([axis])
+        except Exception as e:
+            messagebox.showerror("Auto Phasing", f"Failed to apply commutation offset on {axis}: {e}")
+            return (False, float(delta_deg), float(mean_abs_err))
+
+        # Quick re-sweep to report residual alignment
+        transition_angles2 = []
+        prev_code = None
+        try:
+            for ang in angles:
+                controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
+                time.sleep(settle_s)
+                code = self.read_hall_state_now(controller, axis)
+                if code is None:
+                    continue
+                if prev_code is not None and code != prev_code:
+                    transition_angles2.append(float(ang % 360))
+                prev_code = code
+        finally:
+            try:
+                controller.runtime.commands.motion.abort([axis])
+                controller.runtime.commands.motion.enable([axis])
+            except Exception:
+                pass
+
+        if transition_angles2:
+            residues2 = [a % 60.0 for a in transition_angles2]
+            residuals2 = [circ_dist_deg(a - delta_deg) for a in residues2]
+            mean_abs_err2 = sum(residuals2) / len(residuals2)
+        else:
+            mean_abs_err2 = 999.0
+
+        self.station_print(
+            f"Applied commutation offset {delta_deg:.1f}° to {axis}; residual misalignment ≈ {mean_abs_err2:.1f}°",
+            station_id=station_id
+        )
+        return (True, float(delta_deg), float(mean_abs_err2))
 
     def rotate_to_match_start(self, observed, encoder_positions):
         """
@@ -2605,17 +2765,25 @@ class stage_checkout():
             self.log_only(f'Observed states: {unique_hall_states}', station_id=station_id)
             self.data[axis]["Halls"] = "Failed"
 
-            self.station_print("Please address hall issues before continuing.", station_id=station_id)
-            # Release the station and remove from testing
-            #station_manager = get_station_manager()
-            #station_manager.release_stations(station_id)
-            self.secondary_ui.update_station_status(station_id, running=False, serial="")
-            controller = self.station_controllers[axis]
-            controller.runtime.commands.motion.disable([axis])
+            # Offer auto-phasing to compute and apply commutation offset using 10° sweep
+            try:
+                if messagebox.askyesno(
+                    "Halls Out of Phase",
+                    f"Axis {axis}: Halls appear out of phase. Attempt auto-phasing (10° sweep) to compute and apply commutation offset?"
+                ):
+                    applied, delta, err = self.auto_commutation_offset(axis, step_deg=10)
+                    if applied:
+                        self.data[axis]["Halls"] = f"Passed (offset {delta:.1f}°)"
+                        self.station_print(
+                            f"Auto-phasing applied on {axis}. Proceeding with remaining checks.",
+                            station_id=station_id
+                        )
+                        return  # Keep axis in test
+            except Exception as e:
+                self.station_print(f"Auto-phasing attempt failed on {axis}: {e}", station_id=station_id)
 
-            self.test_axes.remove(axis)
-            if axis in self.station_controllers:
-                del self.station_controllers[axis]
+            # If we reach here, either user declined or auto-phasing did not apply; release only this axis
+            self.release_axis(axis)
 
         if not self.test_axes:
             raise TestSequenceAbort("Please address hall issues on affected axes. Ending test.")
