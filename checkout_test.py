@@ -1142,8 +1142,9 @@ class stage_checkout():
 
     def auto_commutation_offset(self, axis, step_deg=10, settle_s=0.15):
         """
-        Sweep electrical angle at 10° steps, detect Hall transitions, compute a commutation
-        offset that aligns transitions to 60° boundaries, and offer to apply it.
+        Perform a 10°-step sweep while running a DataCollection snapshot, then
+        derive Hall transitions and encoder samples from the snapshot to compute
+        a commutation offset. Apply via configuration params and optionally re-sweep.
         Returns (applied: bool, delta_deg: float, mean_abs_err: float)
         """
         import math
@@ -1152,7 +1153,7 @@ class stage_checkout():
         if controller is None:
             return (False, 0.0, 999.0)
 
-        # Determine a reasonable current for the tuning command
+        # Determine current for the tuning command
         try:
             current_threshold = controller.runtime.parameters.axes[axis].protection.averagecurrentthreshold.value
             current = float(current_threshold) / 2.0 if current_threshold else 0.5
@@ -1166,38 +1167,90 @@ class stage_checkout():
         except Exception:
             pass
 
-        # Sweep and detect transitions
         angles = list(range(0, 360, step_deg))
-        transition_angles = []
-        prev_code = None
+        total_steps = len(angles)
+        base_delay = 0.1  # initial delay after starting snapshot
+        step_samples = max(1, int(self.sample_rate * settle_s))
+        base_offset_samples = int(self.sample_rate * base_delay)
+        n = base_offset_samples + total_steps * step_samples + int(0.05 * self.sample_rate)
+        freq = a1.DataCollectionFrequency.Frequency1kHz
+
+        # Configure and start snapshot
         try:
+            with _thread_lock:
+                data_config = self.data_config(n, freq, axis)
+            controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
+            time.sleep(base_delay)
+
+            # Sweep through 10° steps
             for ang in angles:
                 controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
                 time.sleep(settle_s)
-                code = self.read_hall_state_now(controller, axis)
-                if code is None:
-                    continue
-                if prev_code is not None and code != prev_code:
-                    transition_angles.append(float(ang % 360))
-                prev_code = code
+
+            # Stop snapshot
+            controller.runtime.data_collection.stop()
         except Exception as e:
-            self.station_print(f"Auto-phasing sweep error on {axis}: {e}", station_id=station_id)
+            try:
+                controller.runtime.data_collection.stop()
+            except Exception:
+                pass
+            self.station_print(f"Auto-phasing snapshot error on {axis}: {e}", station_id=station_id)
             return (False, 0.0, 999.0)
         finally:
-            # Return to a safe state
             try:
                 controller.runtime.commands.motion.abort([axis])
                 controller.runtime.commands.motion.enable([axis])
             except Exception:
                 pass
 
+        # Retrieve results
+        try:
+            results = controller.runtime.data_collection.get_results(data_config, n)
+            halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
+            pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
+        except Exception as e:
+            self.station_print(f"Auto-phasing: failed to get snapshot results on {axis}: {e}", station_id=station_id)
+            return (False, 0.0, 999.0)
+
+        # Extract hall code and encoder sample per step (sample near the end of each dwell window)
+        hall_codes = []
+        encoder_samples = []
+        for i in range(total_steps):
+            idx = base_offset_samples + (i + 1) * step_samples - 1
+            if idx < 0 or idx >= len(halls):
+                idx = min(max(0, idx), len(halls) - 1)
+            ds = int(halls[idx])
+            hall_a = 1 if ((ds & a1.DriveStatus.HallAInput.value) > 0) else 0
+            hall_b = 1 if ((ds & a1.DriveStatus.HallBInput.value) > 0) else 0
+            hall_c = 1 if ((ds & a1.DriveStatus.HallCInput.value) > 0) else 0
+            hall_codes.append(f"{hall_a}{hall_b}{hall_c}")
+            try:
+                encoder_samples.append(float(pri_fbk[idx]))
+            except Exception:
+                encoder_samples.append(None)
+
+        # Build transition angles from successive hall code changes
+        transition_angles = []
+        for i in range(1, total_steps):
+            prev = hall_codes[i - 1]
+            cur = hall_codes[i]
+            if prev != cur and cur not in ("000", "111"):
+                transition_angles.append(float(angles[i]))
+
         if len(transition_angles) < 5:
             messagebox.showwarning("Auto Phasing", f"Insufficient Hall transitions detected on {axis} for offset computation.")
             return (False, 0.0, 999.0)
 
+        # Optional: warn if encoder is not mostly increasing during the sweep
+        valid_enc = [e for e in encoder_samples if e is not None]
+        if len(valid_enc) >= 2:
+            diffs = [valid_enc[i+1] - valid_enc[i] for i in range(len(valid_enc)-1)]
+            positives = sum(1 for d in diffs if d > 0)
+            if positives < max(1, int(0.8 * len(diffs))):
+                self.station_print(f"Warning: Encoder is not consistently increasing during 10° sweep on {axis}", station_id=station_id)
+
         # Compute offset using circular mean of residues modulo 60°
         residues = [a % 60.0 for a in transition_angles]
-        # Map to unit circle where 60° == 2π
         angles_rad = [2 * math.pi * (r / 60.0) for r in residues]
         C = sum(math.cos(th) for th in angles_rad)
         S = sum(math.sin(th) for th in angles_rad)
@@ -1207,7 +1260,7 @@ class stage_checkout():
         mean_angle_rad = math.atan2(S, C)
         delta_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
 
-        # Estimate residual misalignment after applying delta
+        # Estimate residual misalignment after applying delta (relative to this dataset)
         def circ_dist_deg(x):
             x = x % 60.0
             return min(x, 60.0 - x)
@@ -1225,45 +1278,19 @@ class stage_checkout():
         # Apply via configuration params (requires reset handled in params)
         try:
             self.params(controller, axis, commutation_offset=float(delta_deg))
-            # Re-enable after reset
             controller.runtime.commands.fault_and_error.acknowledgeall(1)
             controller.runtime.commands.motion.enable([axis])
         except Exception as e:
             messagebox.showerror("Auto Phasing", f"Failed to apply commutation offset on {axis}: {e}")
             return (False, float(delta_deg), float(mean_abs_err))
 
-        # Quick re-sweep to report residual alignment
-        transition_angles2 = []
-        prev_code = None
-        try:
-            for ang in angles:
-                controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
-                time.sleep(settle_s)
-                code = self.read_hall_state_now(controller, axis)
-                if code is None:
-                    continue
-                if prev_code is not None and code != prev_code:
-                    transition_angles2.append(float(ang % 360))
-                prev_code = code
-        finally:
-            try:
-                controller.runtime.commands.motion.abort([axis])
-                controller.runtime.commands.motion.enable([axis])
-            except Exception:
-                pass
-
-        if transition_angles2:
-            residues2 = [a % 60.0 for a in transition_angles2]
-            residuals2 = [circ_dist_deg(a - delta_deg) for a in residues2]
-            mean_abs_err2 = sum(residuals2) / len(residuals2)
-        else:
-            mean_abs_err2 = 999.0
-
+        # Optionally, we could re-snapshot and recompute residuals again. For now, rely on the
+        # main hall checks to validate alignment after apply.
         self.station_print(
-            f"Applied commutation offset {delta_deg:.1f}° to {axis}; residual misalignment ≈ {mean_abs_err2:.1f}°",
+            f"Applied commutation offset {delta_deg:.1f}° to {axis}; re-running hall checks will validate alignment.",
             station_id=station_id
         )
-        return (True, float(delta_deg), float(mean_abs_err2))
+        return (True, float(delta_deg), float(mean_abs_err))
 
     def rotate_to_match_start(self, observed, encoder_positions):
         """
@@ -1569,6 +1596,26 @@ class stage_checkout():
             encoder_direction = "unknown"
             if len(encoder_values) >= 2:
                 encoder_direction = "positive" if encoder_values[-1] > encoder_values[0] else "negative"
+            
+            # Verify encoder monotonicity per step using DataCollection-derived values
+            def _is_monotonic(vals, direction, eps=2.0):
+                if len(vals) < 2:
+                    return True
+                diffs = [vals[i+1] - vals[i] for i in range(len(vals)-1)]
+                if direction == "positive":
+                    return all(d > eps for d in diffs)
+                elif direction == "negative":
+                    return all(d < -eps for d in diffs)
+                return False
+            if encoder_direction in ("positive", "negative") and not _is_monotonic(encoder_values, encoder_direction):
+                self.station_print(
+                    f"Encoder monotonicity failure for {axis}: counts are not consistently "
+                    f"{'increasing' if encoder_direction == 'positive' else 'decreasing'} with motor phase steps.",
+                    station_id=station_id
+                )
+                self.release_axis(axis)
+                return
+            
             expected_states = []
             for i in range(len(observed_states)):
                 expected_states.append(self.hall_dict[angles[i]])
@@ -1746,6 +1793,26 @@ class stage_checkout():
                 encoder_direction = "unknown"
                 if len(encoder_values) >= 2:
                     encoder_direction = "positive" if encoder_values[-1] > encoder_values[0] else "negative"
+                
+                # Verify encoder monotonicity per step using DataCollection-derived values
+                def _is_monotonic(vals, direction, eps=2.0):
+                    if len(vals) < 2:
+                        return True
+                    diffs = [vals[i+1] - vals[i] for i in range(len(vals)-1)]
+                    if direction == "positive":
+                        return all(d > eps for d in diffs)
+                    elif direction == "negative":
+                        return all(d < -eps for d in diffs)
+                    return False
+                if encoder_direction in ("positive", "negative") and not _is_monotonic(encoder_values, encoder_direction):
+                    self.station_print(
+                        f"Encoder monotonicity failure for {axis}: counts are not consistently "
+                        f"{'increasing' if encoder_direction == 'positive' else 'decreasing'} with motor phase steps.",
+                        station_id=station_id
+                    )
+                    # Treat as sequencing/polarity issue and release only this axis
+                    self.release_axis(axis)
+                    return
                 
                 # Determine expected order for the angles we actually observed
                 expected_states = []
@@ -2757,33 +2824,56 @@ class stage_checkout():
             self.log_only(f'Hall states for {axis} are in the correct order.')
             self.data[axis]["Halls"] = "Passed"
         else:
-            self.station_print(f'Hall states for {axis} are NOT in the correct order:', station_id=station_id)
-            self.station_print(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
-            self.station_print(f'Observed states: {unique_hall_states}', station_id=station_id)
-            self.log_only(f'Hall states for {axis} are NOT in the correct order.', station_id=station_id)
-            self.log_only(f'Expected order: {"CW" if encoder_direction == "positive" else "CCW"} sequence', station_id=station_id)
-            self.log_only(f'Observed states: {unique_hall_states}', station_id=station_id)
-            self.data[axis]["Halls"] = "Failed"
+            # Build expected hall sequence for positive encoder direction
+            base_angles = [0, 60, 120, 180, 240, 300]
+            expected_states = [self.hall_dict[a] for a in base_angles[:len(observed_states)]]
 
-            # Offer auto-phasing to compute and apply commutation offset using 10° sweep
-            try:
-                if messagebox.askyesno(
-                    "Halls Out of Phase",
-                    f"Axis {axis}: Halls appear out of phase. Attempt auto-phasing (10° sweep) to compute and apply commutation offset?"
-                ):
-                    applied, delta, err = self.auto_commutation_offset(axis, step_deg=10)
-                    if applied:
-                        self.data[axis]["Halls"] = f"Passed (offset {delta:.1f}°)"
-                        self.station_print(
-                            f"Auto-phasing applied on {axis}. Proceeding with remaining checks.",
-                            station_id=station_id
-                        )
-                        return  # Keep axis in test
-            except Exception as e:
-                self.station_print(f"Auto-phasing attempt failed on {axis}: {e}", station_id=station_id)
+            # Helper to check if observed is a rotation of expected
+            def rotation_classification(exp, obs):
+                if len(exp) != len(obs) or len(exp) == 0:
+                    return (False, 0)
+                for k in range(len(exp)):
+                    if exp[k:] + exp[:k] == obs:
+                        return (True, k)
+                return (False, 0)
 
-            # If we reach here, either user declined or auto-phasing did not apply; release only this axis
-            self.release_axis(axis)
+            is_rot, shift_steps = rotation_classification(expected_states, observed_states)
+            if is_rot:
+                # Phasing misalignment: correct sequence rotated by shift_steps*60°
+                deg_shift = (shift_steps * 60) % 360
+                self.station_print(f'Motor phasing misalignment detected for {axis}: ~{deg_shift}° offset from expected.', station_id=station_id)
+                self.log_only(f'Motor phasing misalignment detected for {axis}: ~{deg_shift}° offset from expected.', station_id=station_id)
+                self.data[axis]["Halls"] = "Failed (phasing)"
+
+                # Offer auto-phasing to compute and apply commutation offset using 10° sweep
+                try:
+                    if messagebox.askyesno(
+                        "Motor Phasing Misalignment",
+                        f"Axis {axis}: Hall transitions appear offset by ~{deg_shift}°. Attempt auto-phasing (10° sweep) to compute and apply commutation offset?"
+                    ):
+                        applied, delta, err = self.auto_commutation_offset(axis, step_deg=10)
+                        if applied:
+                            self.data[axis]["Halls"] = f"Passed (offset {delta:.1f}°)"
+                            self.station_print(
+                                f"Auto-phasing applied on {axis}. Proceeding with remaining checks.",
+                                station_id=station_id
+                            )
+                            return  # Keep axis in test
+                except Exception as e:
+                    self.station_print(f"Auto-phasing attempt failed on {axis}: {e}", station_id=station_id)
+
+                # If we reach here, either user declined or auto-phasing did not apply; release only this axis
+                self.release_axis(axis)
+            else:
+                # Sequence mismatch, not a simple rotation — likely wiring/polarity/order issue
+                self.station_print(f'Hall sequence for {axis} does not match expected order for positive encoder motion.', station_id=station_id)
+                self.station_print(f'Observed states (unique): {unique_hall_states}', station_id=station_id)
+                self.log_only(f'Hall sequence mismatch for {axis}.', station_id=station_id)
+                self.log_only(f'Observed states (unique): {unique_hall_states}', station_id=station_id)
+                self.data[axis]["Halls"] = "Failed (sequence)"
+
+                # Release only this axis
+                self.release_axis(axis)
 
         if not self.test_axes:
             raise TestSequenceAbort("Please address hall issues on affected axes. Ending test.")
