@@ -1732,94 +1732,176 @@ class stage_checkout():
             try:
                 controller = self.station_controllers[axis]
                 station_id = self.axis_to_station_map.get(axis)
-                test_station_id = station_id
-
-                angle = 0
-                current_threshold = controller.runtime.parameters.axes[axis].protection.averagecurrentthreshold.value
-                current = current_threshold / 2
-
-                with _thread_lock:
-                    # Configure data collection
-                    data_config = self.data_config(n, freq, axis)
-                    
-                # Start data collection and move
-                controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
-                time.sleep(0.1)
                 
+                # 10° snapshot-based sweep for robust initial phase check
+                step_deg = 10
+                settle_s = 0.15
+                base_delay = 0.1
+                angles = list(range(0, 360, step_deg))
+                total_steps = len(angles)
+                
+                # Determine current for the tuning command
                 try:
-                    while angle < 350:
-                        controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, angle)
-                        angle += 60
-                        time.sleep(3)
+                    current_threshold = controller.runtime.parameters.axes[axis].protection.averagecurrentthreshold.value
+                    current = float(current_threshold) / 2.0 if current_threshold else 0.5
+                except Exception:
+                    current = 0.5
+                
+                # Configure and start snapshot
+                with _thread_lock:
+                    data_config = self.data_config(n=int(self.sample_rate * (base_delay + total_steps * settle_s + 0.05)),
+                                                  freq=a1.DataCollectionFrequency.Frequency1kHz,
+                                                  axis=axis)
+                try:
+                    controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
+                    time.sleep(base_delay)
+                    
+                    for ang in angles:
+                        controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
+                        time.sleep(settle_s)
+                    
+                    controller.runtime.data_collection.stop()
                 except (ControllerAxisFaultException, ControllerOperationException):
-                    error_message = "Axis fault occurred during MSET commands."
+                    error_message = "Axis fault occurred during 10° sweep."
                     faults_per_axis = self.check_for_faults(controller, [axis])
                     fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
                     decoded_faults = fault_init.get_fault()
                     self.fault_log.info(f'A fault occurred on {axis}: {decoded_faults}')
                     
-                    # Only attempt fallback if fault appears to be travel-related AND we haven't already tried fallback
-                    if method_per_axis[axis] == 'MSET' and self.is_travel_related_fault(decoded_faults):
-                        self.station_print(f"Travel-related fault detected on axis {axis}, attempting fallback method", 
-                                          station_id=station_id)
-                        
-                        # Clear faults and try fallback
+                    # Attempt fallback only if travel-related
+                    if method_per_axis[axis] == 'MSET' and self.is_travel_related_fault(decoded_faults.get(axis, [])):
+                        self.station_print(f"Travel-related fault detected on axis {axis}, attempting fallback method", station_id=station_id)
                         controller.runtime.commands.fault_and_error.acknowledgeall(1)
                         controller.runtime.commands.motion.enable([axis])
-                        controller.runtime.data_collection.stop()
-                        
+                        try:
+                            controller.runtime.data_collection.stop()
+                        except Exception:
+                            pass
                         if self.check_halls_fallback(axis):
-                            # Fallback succeeded, continue with normal validation
                             return
                     
-                    # If not travel-related, already using fallback, or fallback failed - handle as error
                     messagebox.showerror("Axis Fault", error_message)
-                    controller.runtime.data_collection.stop()
-                    # Release this axis/station
+                    try:
+                        controller.runtime.data_collection.stop()
+                    except Exception:
+                        pass
+                    self.release_axis(axis)
+                    return
+                finally:
+                    try:
+                        controller.runtime.commands.motion.abort([axis])
+                        controller.runtime.commands.motion.enable([axis])
+                    except Exception:
+                        pass
+                
+                # Retrieve snapshot results
+                results = controller.runtime.data_collection.get_results(data_config, data_config.sample_count)
+                halls = results.axis.get(a1.AxisDataSignal.DriveStatus, axis).points
+                pri_fbk = results.axis.get(a1.AxisDataSignal.PrimaryFeedback, axis).points
+                
+                # Derive hall code and encoder sample per step (sample near the end of each dwell)
+                step_samples = max(1, int(self.sample_rate * settle_s))
+                base_offset_samples = int(self.sample_rate * base_delay)
+                hall_codes = []
+                encoder_samples = []
+                for i in range(total_steps):
+                    idx = base_offset_samples + (i + 1) * step_samples - 1
+                    if idx < 0 or idx >= len(halls):
+                        idx = min(max(0, idx), len(halls) - 1)
+                    ds = int(halls[idx])
+                    hall_a = 1 if ((ds & a1.DriveStatus.HallAInput.value) > 0) else 0
+                    hall_b = 1 if ((ds & a1.DriveStatus.HallBInput.value) > 0) else 0
+                    hall_c = 1 if ((ds & a1.DriveStatus.HallCInput.value) > 0) else 0
+                    hall_codes.append(f"{hall_a}{hall_b}{hall_c}")
+                    try:
+                        encoder_samples.append(float(pri_fbk[idx]))
+                    except Exception:
+                        encoder_samples.append(None)
+                
+                # Encoder monotonicity check
+                valid_enc = [e for e in encoder_samples if e is not None]
+                if len(valid_enc) >= 2:
+                    diffs = [valid_enc[i+1] - valid_enc[i] for i in range(len(valid_enc)-1)]
+                    positives = sum(1 for d in diffs if d > 2.0)  # small epsilon
+                    if positives < max(1, int(0.8 * len(diffs))):
+                        self.station_print(f"Encoder monotonicity failure for {axis} during 10° sweep.", station_id=station_id)
+                        self.release_axis(axis)
+                        return
+                
+                # Build transition angles from successive hall code changes
+                transition_angles = []
+                for i in range(1, total_steps):
+                    prev = hall_codes[i - 1]
+                    cur = hall_codes[i]
+                    if prev != cur and cur not in ("000", "111"):
+                        transition_angles.append(float(angles[i]))
+                
+                # Classify sequence vs misalignment
+                expected_order_cw = ["001", "011", "010", "110", "100", "101"]
+                def rotation_classification(order, obs):
+                    if not obs:
+                        return (False, 0)
+                    for k in range(len(order)):
+                        if order[k:] + order[:k] == obs:
+                            return (True, k)
+                    return (False, 0)
+                
+                # Reduce to unique observed code progression
+                unique_codes = []
+                for c in hall_codes:
+                    if not unique_codes or unique_codes[-1] != c:
+                        unique_codes.append(c)
+                # Keep only valid states
+                unique_codes = [c for c in unique_codes if c in expected_order_cw]
+                is_rot, shift_steps = rotation_classification(expected_order_cw, unique_codes[:6])
+                
+                # Compute commutation offset from transitions, if available
+                delta_deg = 0.0
+                if len(transition_angles) >= 5:
+                    residues = [a % 60.0 for a in transition_angles]
+                    import math
+                    angles_rad = [2 * math.pi * (r / 60.0) for r in residues]
+                    C = sum(math.cos(th) for th in angles_rad)
+                    S = sum(math.sin(th) for th in angles_rad)
+                    if abs(C) > 1e-6 or abs(S) > 1e-6:
+                        mean_angle_rad = math.atan2(S, C)
+                        delta_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
+                
+                # Decision
+                threshold = 5.0
+                if is_rot and (shift_steps % 6) == 0 and delta_deg <= threshold:
+                    # In phase
+                    self.data[axis]["Halls"] = "Passed"
+                    self.station_print(f"Halls Passed for {axis}", station_id=station_id)
+                    return
+                
+                if is_rot or delta_deg > threshold:
+                    # Misalignment: offer auto-phasing
+                    self.data[axis]["Halls"] = "Failed (phasing)"
+                    if messagebox.askyesno(
+                        "Motor Phasing Misalignment",
+                        f"Axis {axis}: Hall transitions appear offset (≈ {delta_deg:.1f}°). Apply commutation offset and continue?" 
+                    ):
+                        try:
+                            self.params(controller, axis, commutation_offset=float(delta_deg))
+                            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                            controller.runtime.commands.motion.enable([axis])
+                            self.data[axis]["Halls"] = f"Passed (offset {delta_deg:.1f}°)"
+                            self.station_print(f"Applied offset {delta_deg:.1f}°; Halls Passed for {axis}", station_id=station_id)
+                            return
+                        except Exception as e:
+                            messagebox.showerror("Auto Phasing", f"Failed to apply commutation offset on {axis}: {e}")
+                    # Declined or failed
                     self.release_axis(axis)
                     return
                 
-                time.sleep(10)
-                
-                controller.runtime.data_collection.stop()
-                controller.runtime.commands.motion.abort([axis])
-                controller.runtime.commands.motion.enable([axis])
-                # Get results and populate instance variables
-                axis_results = controller.runtime.data_collection.get_results(data_config, n)
-                
-                self.populate(axis, axis_results)
-                
-                # Build observed states and encoder values in the expected angle order
-                angles = [0, 60, 120, 180, 240, 300]
-                observed_states = []
-                encoder_values = []
-                for ang in angles:
-                    if axis in self.hall_states and ang in self.hall_states[axis]:
-                        observed_states.append(self.hall_states[axis][ang])
-                        if axis in self.hall_encoder_positions and ang in self.hall_encoder_positions[axis]:
-                            encoder_values.append(self.hall_encoder_positions[axis][ang])
-                
-                # Compute encoder direction using first/last available values
-                encoder_direction = "unknown"
-                if len(encoder_values) >= 2:
-                    encoder_direction = "positive" if encoder_values[-1] > encoder_values[0] else "negative"
-                
-                # Verify encoder monotonicity per step using DataCollection-derived values
-                def _is_monotonic(vals, direction, eps=2.0):
-                    if len(vals) < 2:
-                        return True
-                    diffs = [vals[i+1] - vals[i] for i in range(len(vals)-1)]
-                    if direction == "positive":
-                        return all(d > eps for d in diffs)
-                    elif direction == "negative":
-                        return all(d < -eps for d in diffs)
-                    return False
-                if encoder_direction in ("positive", "negative") and not _is_monotonic(encoder_values, encoder_direction):
-                    self.station_print(
-                        f"Encoder monotonicity failure for {axis}: counts are not consistently "
-                        f"{'increasing' if encoder_direction == 'positive' else 'decreasing'} with motor phase steps.",
-                        station_id=station_id
-                    )
+                # Not rotation/progressive: treat as sequence mismatch
+                self.station_print(f"Hall sequence for {axis} does not match expected order for positive encoder motion.", station_id=station_id)
+                self.data[axis]["Halls"] = "Failed (sequence)"
+                self.release_axis(axis)
+                return
+            except TestSequenceAbort:
+                raise
                     # Treat as sequencing/polarity issue and release only this axis
                     self.release_axis(axis)
                     return
