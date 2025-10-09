@@ -124,10 +124,10 @@ class burn_in():
 
     def get_spec_value(self, spec_key):
         """
-        Get a numerical value from specs_dict, handling both float and string formats.
+        Get a numerical value from param_dict, handling int, float, and string formats.
         
         Args:
-            spec_key (str): The key to look up in specs_dict
+            spec_key (str): The key to look up in param_dict
             
         Returns:
             float: The numerical value
