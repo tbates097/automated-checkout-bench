@@ -215,6 +215,59 @@ class stage_checkout():
             messagebox.showerror("Test Sequence Aborted", "All tests aborted by user.")
             raise TestSequenceAbort("All tests aborted by user.", shown_message=True)
 
+    def release_axis(self, axis):
+        """Disable, update UI, cleanup resources, and release a station via StationManager.
+        axis is like 'ST01'"""
+        try:
+            station_id = self.axis_to_station_map.get(axis)
+        except Exception:
+            station_id = None
+        # Best-effort motion stop/disable
+        try:
+            if axis in getattr(self, 'station_controllers', {}):
+                ctrl = self.station_controllers[axis]
+                try:
+                    ctrl.runtime.commands.motion.abort([axis])
+                except Exception:
+                    pass
+                try:
+                    ctrl.runtime.commands.motion.disable([axis])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # UI updates
+        try:
+            if station_id is not None:
+                self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                self.station_print(f"Station {station_id} has been released", station_id=station_id)
+        except Exception:
+            pass
+        # Cleanup data structures
+        try:
+            if axis in getattr(self, 'test_axes', []):
+                try:
+                    self.test_axes.remove(axis)
+                except ValueError:
+                    pass
+            if axis in getattr(self, 'station_controllers', {}):
+                del self.station_controllers[axis]
+            if hasattr(self, 'station_loggers') and station_id in getattr(self, 'station_loggers', {}):
+                try:
+                    del self.station_loggers[station_id]
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Actual StationManager release
+        try:
+            sm = get_station_manager()
+            if sm:
+                sm.release_stations(axis)
+                sm.refresh_station_status()
+        except Exception:
+            pass
+
     def station_print(self, message, station_id=None):
         """
         Print a message to specific station(s) text_widget or all stations.
@@ -846,17 +899,10 @@ class stage_checkout():
                                     self.home_stages()
                                     self.check_hardstop()
                                 else:
-                                    #station_manager = get_station_manager()
-                                    #station_manager.release_stations(station_id)
-                                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                                    controller = self.station_controllers[axis]
-                                    controller.runtime.commands.motion.disable([axis])
-
+                                    self.release_axis(axis)
                                     if axis in updated_connected_axes:
                                         updated_connected_axes.remove(axis)
-                                    if axis in self.station_controllers:
-                                        del self.station_controllers[axis]
-                    
+                                    
                                     # Check if any axes remain
                                     if not self.test_axes:
                                         raise TestSequenceAbort("All axes have failed checks. Ending test.")
@@ -868,23 +914,16 @@ class stage_checkout():
                                 self.station_print(f'Axis {axis} has the following faults: {filtered_faults}', station_id=station_id)
                                 
                                 if confirm:
-                                    # Continue and remove the axis from connected_axes
-                                    print('Continuing the test and removing affected axis.')
+                                    # Remove the axis and continue
+                                    self.release_axis(axis)
                                     if axis in updated_connected_axes:
                                         updated_connected_axes.remove(axis)
                                 else:
-                                    # Re-enable the "Run" button and stop further execution
+                                    # Stop testing this axis and release it
                                     self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                                    #station_manager = get_station_manager()
-                                    #station_manager.release_stations(station_id)
-                                    self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                                    controller = self.station_controllers[axis]
-                                    controller.runtime.commands.motion.disable([axis])
-
+                                    self.release_axis(axis)
                                     if axis in updated_connected_axes:
                                         updated_connected_axes.remove(axis)
-                                    if axis in self.station_controllers:
-                                        del self.station_controllers[axis]
                                     
                                     # Check if any axes remain
                                     if not self.test_axes:
@@ -905,15 +944,9 @@ class stage_checkout():
                                 self.home_stages()
                                 self.check_hardstop()
                             else:
-                                #station_manager = get_station_manager()
-                                #station_manager.release_stations(station_id)
-                                self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                                controller = self.station_controllers[axis]
-                                controller.runtime.commands.motion.disable([axis])
+                                self.release_axis(axis)
                                 if axis in updated_connected_axes:
                                     updated_connected_axes.remove(axis)
-                                if axis in self.station_controllers:
-                                    del self.station_controllers[axis]
                                 
                                 # Check if any axes remain
                                 if not self.test_axes:
@@ -926,22 +959,16 @@ class stage_checkout():
                     self.station_print(f'Axis {axis} has the following faults: {faults}', station_id=station_id)
                 
                     if confirm:
-                        # Continue and remove the axis from connected_axes
-                        print('Continuing the test and removing affected axis.')
+                        # Remove the axis and continue
+                        self.release_axis(axis)
                         if axis in updated_connected_axes:
                             updated_connected_axes.remove(axis)
                     else:
-                        # Re-enable the "Run" button and stop further execution
+                        # Stop testing this axis and release it
                         self.station_print(f'Axis {axis} requires attention for the following faults: {faults}.', station_id=station_id)
-                        #station_manager = get_station_manager()
-                        #station_manager.release_stations(station_id)
-                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        controller = self.station_controllers[axis]
-                        controller.runtime.commands.motion.disable([axis])
+                        self.release_axis(axis)
                         if axis in updated_connected_axes:
                             updated_connected_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
                         
                         # Check if any axes remain
                         if not self.test_axes:
@@ -981,6 +1008,9 @@ class stage_checkout():
 
         # Enable all axes in parallel
         threads = []
+        failures = {}
+        failures_lock = threading.Lock()
+        
         def enable_single_axis(axis):
             try:
                 # Check if this station was aborted
@@ -1018,16 +1048,21 @@ class stage_checkout():
                 time.sleep(3)
                 
                 # Check for abort before handling faults
+                station_id = self.axis_to_station_map.get(axis)
                 if station_id in self.aborted_stations:
                     raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-                    
+                
+                controller = self.station_controllers[axis]
                 faults_per_axis = self.check_for_faults(controller, [axis])
-                # Decode and log using the correct per-axis controller; may adjust test flow elsewhere
+                # Decode and capture details for later display/abort
                 try:
                     fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
-                    _ = fault_init.get_fault()
+                    decoded = fault_init.get_fault()
                 except Exception:
-                    pass
+                    decoded = {axis: []}
+                
+                with failures_lock:
+                    failures[axis] = decoded.get(axis, [])
                 
         try:
             # Start enable threads
@@ -1039,6 +1074,21 @@ class stage_checkout():
             # Wait for all enables to complete
             for thread in threads:
                 thread.join()
+                
+            # If any axis failed to enable, show details and abort the sequence
+            if failures:
+                # Release failed axes immediately
+                for ax in list(failures.keys()):
+                    self.release_axis(ax)
+                lines = []
+                for ax, flist in failures.items():
+                    desc = ", ".join(flist) if flist else "Unknown fault(s)"
+                    lines.append(f"{ax}: {desc}")
+                messagebox.showwarning(
+                    "Axis Fault During Enable",
+                    "The following axes failed to enable and were removed from testing:\n" + "\n".join(lines)
+                )
+                # Continue with remaining axes; if none remain, we'll abort below
                 
             # Check if we still have axes to test
             if not self.test_axes:
@@ -1446,12 +1496,8 @@ class stage_checkout():
                 self.station_print(f"Fault during initial positioning on axis {axis}: {decoded_faults}", station_id=station_id)
                 messagebox.showerror("Axis Fault", f"{error_message}\nFault: {decoded_faults}")
                 
-                # Remove axis from testing
-                self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                if axis in self.test_axes:
-                    self.test_axes.remove(axis)
-                if axis in self.station_controllers:
-                    del self.station_controllers[axis]
+                # Release this axis/station
+                self.release_axis(axis)
                 return
         
         for axis in self.test_axes:
@@ -1512,11 +1558,8 @@ class stage_checkout():
                     # If not travel-related, already using fallback, or fallback failed - handle as error
                     messagebox.showerror("Axis Fault", error_message)
                     controller.runtime.data_collection.stop()
-                    self.secondary_ui.update_station_status(test_station_id, running=False, serial="")
-                    if axis in self.test_axes:
-                        self.test_axes.remove(axis)
-                    if axis in self.station_controllers:
-                        del self.station_controllers[axis]
+                    # Release this axis/station
+                    self.release_axis(axis)
                     return
                 
                 time.sleep(10)
@@ -2348,16 +2391,7 @@ class stage_checkout():
                         self.station_print("Please address limit travel issues before continuing.", station_id=station_id)
                         
                         # Release the station and remove from testing
-                        #station_manager = get_station_manager()
-                        #station_manager.release_stations(station_id)
-                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        controller = self.station_controllers[axis]
-                        controller.runtime.commands.motion.disable([axis])
-                        
-                        # Remove from active testing
-                        self.test_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
+                        self.release_axis(axis)
                         
                         # Check if any axes remain
                         if not self.test_axes:
@@ -2388,16 +2422,7 @@ class stage_checkout():
                         self.station_print("Please address hardstop travel issues before continuing.", station_id=station_id)
                         
                         # Release the station and remove from testing
-                        #station_manager = get_station_manager()
-                        #station_manager.release_stations(station_id)
-                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        controller = self.station_controllers[axis]
-                        controller.runtime.commands.motion.disable([axis])
-                        
-                        # Remove from active testing
-                        self.test_axes.remove(axis)
-                        if axis in self.station_controllers:
-                            del self.station_controllers[axis]
+                        self.release_axis(axis)
                         
                         # Check if any axes remain
                         if not self.test_axes:

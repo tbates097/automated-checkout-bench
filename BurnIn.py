@@ -116,6 +116,59 @@ class burn_in():
                     else:
                         self.station_loggers[sid].write(message + "\n")
 
+    def release_axis(self, axis):
+        """Disable, update UI, cleanup resources, and release a station via StationManager.
+        axis is like 'ST01'"""
+        try:
+            station_id = self.axis_to_station_map.get(axis)
+        except Exception:
+            station_id = None
+        # Best-effort motion stop/disable
+        try:
+            if axis in getattr(self, 'station_controllers', {}):
+                ctrl = self.station_controllers[axis]
+                try:
+                    ctrl.runtime.commands.motion.abort([axis])
+                except Exception:
+                    pass
+                try:
+                    ctrl.runtime.commands.motion.disable([axis])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # UI updates
+        try:
+            if station_id is not None:
+                self.secondary_ui.update_station_status(station_id, running=False, serial="")
+                self.station_print(f"Station {station_id} has been released", station_id=station_id)
+        except Exception:
+            pass
+        # Cleanup data structures
+        try:
+            if axis in getattr(self, 'test_axes', []):
+                try:
+                    self.test_axes.remove(axis)
+                except ValueError:
+                    pass
+            if axis in getattr(self, 'station_controllers', {}):
+                del self.station_controllers[axis]
+            if hasattr(self, 'station_loggers') and station_id in getattr(self, 'station_loggers', {}):
+                try:
+                    del self.station_loggers[station_id]
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Actual StationManager release
+        try:
+            sm = get_station_manager()
+            if sm:
+                sm.release_stations(axis)
+                sm.refresh_station_status()
+        except Exception:
+            pass
+
     def reset_stdout(self):
         """
         Reset sys.stdout to its original value.
@@ -613,20 +666,7 @@ class burn_in():
         station_id = self.axis_to_station_map[axis]  # Get station directly from the map
         
         if station_id:
-            #station_manager = get_station_manager()
-            #station_manager.release_stations(station_id)
-            #station_manager.refresh_station_status()
-            self.secondary_ui.update_station_status(station_id, running=False, serial="")
-            controller = self.station_controllers[axis]
-            controller.runtime.commands.motion.disable([axis])
-            
-            # Remove this axis from testing
-            if axis in self.test_axes:
-                self.test_axes.remove(axis)
-                self.stage_info.info(f"Removed {axis} from test_axes")
-            if axis in self.station_controllers:
-                del self.station_controllers[axis]
-                self.stage_info.info(f"Removed {axis} from station_controllers")
+            self.release_axis(axis)
         else:
             self.stage_info.error(f"Could not find station_id for axis {axis}")
 
@@ -698,19 +738,8 @@ class burn_in():
                 
                 if station_id and station_id in self.station_loggers:  # Only cleanup stations that belong to this test
                     try:
-                        # Print status messages BEFORE cleanup
-                        self.station_print("Cleanup complete for station", station_id=station_id)
-                        self.station_print(f"Station {station_id} has been released", station_id=station_id)
-                        
-                        # Update UI and release station only for stations in this test
-                        self.secondary_ui.update_station_status(station_id, running=False, serial="")
-                        #station_manager = get_station_manager()
-                        #station_manager.release_stations(station_id)
-                        #station_manager.refresh_station_status()
-                        
-                        # Do data structure cleanup last
-                        self.cleanup_data_structures(station_id, axis)
-                        
+                        # Stop data collection already performed above; now release the station
+                        self.release_axis(axis)
                     except Exception as cleanup_error:
                         self.station_print(f"Error during cleanup: {str(cleanup_error)}", station_id=station_id)
                         self.fault_log.error(f"Cleanup error for station {station_id}: {str(cleanup_error)}")
