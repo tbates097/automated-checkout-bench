@@ -175,6 +175,9 @@ class stage_checkout():
         # Add to your initialization
         self.aborted_stations = {}  # Track which stations have been aborted
 
+        # Track servo gain K adjustments per axis to avoid runaway increases
+        self.gain_k_adjustments = {}
+
     def abort_test(self, axis):
         """Handle abort button click for a specific axis"""
         station_id = self.axis_to_station_map[axis]
@@ -809,7 +812,7 @@ class stage_checkout():
             except Exception as e:
                 self.fault_log.error(f"Error during cleanup: {str(e)}")
         
-    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None, home_speed=None, commutation_offset=None):
+    def params(self, controller, axis, home_offset=None, current_clamp=None, limit=None, home_setup=None, home_speed=None, commutation_offset=None, increase_gain_k_factor=None):
         """
         Configure parameters for a specific axis on its controller.
 
@@ -852,6 +855,15 @@ class stage_checkout():
                 configured_parameters.axes[axis].motor.commutationoffset.value = float(commutation_offset)
             except Exception as e:
                 self.station_print(f"Failed to set commutation offset for {axis}: {e}", station_id=self.axis_to_station_map.get(axis))
+
+        # Optionally increase servo loop gain K by a factor (e.g., 0.5 = +50%)
+        if increase_gain_k_factor is not None:
+            try:
+                current_k = float(configured_parameters.axes[axis].servo.servoloopgaink.value)
+                new_k = current_k * (1.0 + float(increase_gain_k_factor))
+                configured_parameters.axes[axis].servo.servoloopgaink.value = new_k
+            except Exception as e:
+                self.station_print(f"Failed to increase servo loop gain K for {axis}: {e}", station_id=self.axis_to_station_map.get(axis))
 
         # Apply the updated configuration for the axis
         controller.configuration.parameters.set_configuration(configured_parameters)
@@ -903,6 +915,26 @@ class stage_checkout():
         
         for axis, faults in decoded_faults.items():
             station_id = self.axis_to_station_map.get(axis)
+
+            # Auto-tune on PositionErrorFault when NOT in hardstop-related tests
+            if ('PositionErrorFault' in faults) and (test not in ('hardstop and limit check', 'absolute hardstop check')):
+                try:
+                    adj_count = self.gain_k_adjustments.get(axis, 0)
+                    if adj_count < 2 and axis in self.station_controllers:
+                        controller = self.station_controllers[axis]
+                        self.station_print(f"Position error on {axis}: increasing servo loop gain K by 50% and retrying...", station_id=station_id)
+                        self.params(controller, axis, increase_gain_k_factor=0.5)
+                        self.gain_k_adjustments[axis] = adj_count + 1
+                    # Clear faults and re-enable to retry from current point
+                    if axis in self.station_controllers:
+                        controller = self.station_controllers[axis]
+                        controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        controller.runtime.commands.motion.enable([axis])
+                    # Skip removal/abort handling; allow caller to retry
+                    continue
+                except Exception as e:
+                    self.station_print(f"Auto-tune retry failed on {axis}: {e}", station_id=station_id)
+
             if test == 'hardstop and limit check':
                 if faults:
                     # Exclude 'CwEndOfTravelLimitFault' and 'CcwEndOfTravelLimitFault' during limit checks
