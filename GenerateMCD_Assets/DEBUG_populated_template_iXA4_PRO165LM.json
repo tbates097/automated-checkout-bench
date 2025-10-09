@@ -1,15 +1,15 @@
 {
   "MechanicalProducts": [
     {
-      "Name": "PRO190LM",
+      "Name": "PRO165LM",
       "DeviceCatalogItemGuid": null,
       "SecondaryDeviceCatalogItemGuid": null,
-      "DisplayName": "PRO190LM",
+      "DisplayName": "PRO165LM",
       "SerialNumber": "",
       "WasAutoDetected": false,
       "ShouldExclude": false,
       "ConfiguredOptions": {
-        "Travel": "-0100",
+        "Travel": 310,
         "Feedback": "-E1",
         "Cable Management": "-CMS2"
       },
@@ -28,7 +28,7 @@
         "Axes": "-AX2",
         "Current Axes 1 and 2": "-20",
         "Current Axes 3 and 4": "",
-        "Bus Voltage": "80V",
+        "Bus Voltage": "40V",
         "Expansion Board": "-EB0",
         "Multiplier Axes 1 and 2": "-MX1",
         "Multiplier Axes 3 and 4": ""
@@ -38,10 +38,10 @@
   ],
   "InterconnectedAxes": [
     {
-      "Name": "ST02",
+      "Name": "ST01",
       "Index": 0,
       "MechanicalAxis": {
-        "DisplayName": "PRO190LM"
+        "DisplayName": "PRO165LM"
       },
       "ElectricalAxis": {
         "DisplayName": "iXA4 Axis 1"
