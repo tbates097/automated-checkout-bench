@@ -1719,34 +1719,71 @@ class stage_checkout():
                 home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
                 if home_speed >= 10:    
                     controller.runtime.parameters.axes[axis].homing.homespeed.value = 5
-                    
-                # Move into limit
-                controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
-                controller.runtime.commands.motion.waitformotiondone([axis], 1)
-                time.sleep(2)
+                
+                # Retry loop for initial positioning with auto-tune on PositionErrorFault
+                retries = 0
+                retry_limit = 2
+                while retries <= retry_limit:
+                    try:
+                        # Move into CCW limit, then move to center of travel
+                        controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+                        controller.runtime.commands.motion.waitformotiondone([axis], 1)
+                        time.sleep(1.0)
 
-                controller.runtime.commands.motion.moveincremental([axis], [centeroftravel], [5])
-                controller.runtime.commands.motion.waitformotiondone([axis], 1)
-                time.sleep(2)
+                        controller.runtime.commands.motion.moveincremental([axis], [centeroftravel], [5])
+                        controller.runtime.commands.motion.waitformotiondone([axis], 1)
+                        time.sleep(1.0)
+                        break  # success
+                    except (ControllerAxisFaultException, ControllerOperationException):
+                        station_id = self.axis_to_station_map.get(axis)
+                        faults_per_axis = self.check_for_faults(controller, [axis])
+                        try:
+                            fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                            decoded_faults = fault_init.get_fault()
+                            faults_list = decoded_faults.get(axis, []) if isinstance(decoded_faults, dict) else []
+                        except Exception:
+                            decoded_faults = {}
+                            faults_list = []
+                        
+                        # If PositionErrorFault, auto-increase K and retry from current position
+                        if 'PositionErrorFault' in faults_list:
+                            adj_count = getattr(self, 'gain_k_adjustments', {}).get(axis, 0)
+                            if adj_count < 2:
+                                try:
+                                    cfg = controller.configuration.parameters.get_configuration()
+                                    current_k = float(cfg.axes[axis].servo.servoloopgaink.value)
+                                    cfg.axes[axis].servo.servoloopgaink.value = current_k * 1.5
+                                    controller.configuration.parameters.set_configuration(cfg)
+                                    controller.reset()
+                                    # Track adjustment
+                                    if not hasattr(self, 'gain_k_adjustments'):
+                                        self.gain_k_adjustments = {}
+                                    self.gain_k_adjustments[axis] = adj_count + 1
+                                    self.station_print(f"Auto-tune: increased gain K by 50% on {axis} (check_halls start).", station_id=station_id)
+                                except Exception as e:
+                                    self.station_print(f"Auto-tune failed to increase K on {axis}: {e}", station_id=station_id)
+                            # Clear faults and re-enable before retry
+                            try:
+                                controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                                controller.runtime.commands.motion.enable([axis])
+                            except Exception:
+                                pass
+                            retries += 1
+                            time.sleep(0.5)
+                            continue
+                        
+                        # Non-position fault: log, show error, and release axis
+                        error_message = f"Axis fault occurred during initial positioning for axis {axis}."
+                        self.fault_log.info(f'A fault occurred on {axis} during initial positioning: {decoded_faults}')
+                        self.station_print(f"Fault during initial positioning on axis {axis}: {decoded_faults}", station_id=station_id)
+                        messagebox.showerror("Axis Fault", f"{error_message}\nFault: {decoded_faults}")
+                        self.release_axis(axis)
+                        return
                 
                 # Return to original home speed
                 controller.runtime.parameters.axes[axis].homing.homespeed.value = home_speed
                 
             except TestSequenceAbort:
-                return
-            except (ControllerAxisFaultException, ControllerOperationException):
-                station_id = self.axis_to_station_map.get(axis)
-                error_message = f"Axis fault occurred during initial positioning for axis {axis}."
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
-                decoded_faults = fault_init.get_fault()
-                self.fault_log.info(f'A fault occurred on {axis} during initial positioning: {decoded_faults}')
-                
-                self.station_print(f"Fault during initial positioning on axis {axis}: {decoded_faults}", station_id=station_id)
-                messagebox.showerror("Axis Fault", f"{error_message}\nFault: {decoded_faults}")
-                
-                # Release this axis/station
-                self.release_axis(axis)
                 return
         
         for axis in self.test_axes:

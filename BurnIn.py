@@ -94,6 +94,9 @@ class burn_in():
         
         self.aborted_stations = []
         self.data_lock = threading.Lock()
+
+        # Track servo gain K adjustments per axis to avoid runaway increases during burn-in
+        self.gain_k_adjustments = {}
         
     def station_print(self, message, station_id=None, overwrite=False):
         """Print a message to specific station(s) text_widget or all stations."""
@@ -247,20 +250,60 @@ class burn_in():
                 raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                 
             controller = self.station_controllers[axis]
-            try:
-                controller.runtime.commands.motion.moveabsolute(
-                    [axis], 
-                    [-1 * self.list_commands[self.test_axes.index(axis)]],
-                    [self.list_velocity[self.test_axes.index(axis)]]
-                )
-                controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException):
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    controller.runtime.commands.fault_and_error.acknowledgeall(1)
-                time.sleep(2)
-            except TestSequenceAbort as e:
-                return
+            retries = 0
+            retry_limit = 2
+            while retries <= retry_limit:
+                try:
+                    controller.runtime.commands.motion.moveabsolute(
+                        [axis], 
+                        [-1 * self.list_commands[self.test_axes.index(axis)]],
+                        [self.list_velocity[self.test_axes.index(axis)]]
+                    )
+                    controller.runtime.commands.motion.waitformotiondone([axis])
+                    break
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    # Decode to see if PositionErrorFault occurred
+                    faults_per_axis = self.check_for_faults(controller, [axis])
+                    try:
+                        fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                        decoded = fault_init.get_fault()
+                        faults_list = decoded.get(axis, []) if isinstance(decoded, dict) else []
+                    except Exception:
+                        faults_list = []
+
+                    if 'PositionErrorFault' in faults_list:
+                        # Increase servo K (capped) and retry from current state
+                        adj_count = self.gain_k_adjustments.get(axis, 0)
+                        if adj_count < 2:
+                            try:
+                                cfg = controller.configuration.parameters.get_configuration()
+                                current_k = float(cfg.axes[axis].servo.servoloopgaink.value)
+                                cfg.axes[axis].servo.servoloopgaink.value = current_k * 1.5
+                                controller.configuration.parameters.set_configuration(cfg)
+                                controller.reset()
+                                self.gain_k_adjustments[axis] = adj_count + 1
+                                self.station_print(f"Auto-tune: increased gain K by 50% on {axis} (start).", station_id=station_id)
+                            except Exception as e:
+                                self.station_print(f"Auto-tune failed to increase K on {axis}: {e}", station_id=station_id)
+                        # Clear faults and re-enable before retry
+                        try:
+                            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                            controller.runtime.commands.motion.enable([axis])
+                        except Exception:
+                            pass
+                        retries += 1
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        # Non-position fault; acknowledge and stop retries
+                        if faults_per_axis:
+                            try:
+                                controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                            except Exception:
+                                pass
+                        break
+                except TestSequenceAbort:
+                    return
         
         try:
             # Start all axis moves in parallel
@@ -449,21 +492,53 @@ class burn_in():
                 raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                 
             controller = self.station_controllers[axis]
-            try:
-                controller.runtime.commands.motion.moveabsolute(
-                    [axis], 
-                    [self.list_commands[self.test_axes.index(axis)]], 
-                    [speed[self.test_axes.index(axis)]]
-                )
-                controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException) as e:
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    # Interactive per-axis handling; do not abort whole sequence here
-                    self.handle_faults(faults_per_axis)
-                return
-            except TestSequenceAbort as e:
-                return
+            retries = 0
+            retry_limit = 2
+            while retries <= retry_limit:
+                try:
+                    controller.runtime.commands.motion.moveabsolute(
+                        [axis], 
+                        [self.list_commands[self.test_axes.index(axis)]], 
+                        [speed[self.test_axes.index(axis)]]
+                    )
+                    controller.runtime.commands.motion.waitformotiondone([axis])
+                    break
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults(controller, [axis])
+                    try:
+                        fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                        decoded = fault_init.get_fault()
+                        faults_list = decoded.get(axis, []) if isinstance(decoded, dict) else []
+                    except Exception:
+                        faults_list = []
+
+                    if 'PositionErrorFault' in faults_list:
+                        adj_count = self.gain_k_adjustments.get(axis, 0)
+                        if adj_count < 2:
+                            try:
+                                cfg = controller.configuration.parameters.get_configuration()
+                                current_k = float(cfg.axes[axis].servo.servoloopgaink.value)
+                                cfg.axes[axis].servo.servoloopgaink.value = current_k * 1.5
+                                controller.configuration.parameters.set_configuration(cfg)
+                                controller.reset()
+                                self.gain_k_adjustments[axis] = adj_count + 1
+                                self.station_print(f"Auto-tune: increased gain K by 50% on {axis} (forward).", station_id=station_id)
+                            except Exception as e:
+                                self.station_print(f"Auto-tune failed to increase K on {axis}: {e}", station_id=station_id)
+                        try:
+                            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                            controller.runtime.commands.motion.enable([axis])
+                        except Exception:
+                            pass
+                        retries += 1
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        if faults_per_axis:
+                            self.handle_faults(faults_per_axis)
+                        return
+                except TestSequenceAbort:
+                    return
             
             # Check again before continuing
             if station_id in self.aborted_stations:
@@ -487,21 +562,53 @@ class burn_in():
                 raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
                 
             controller = self.station_controllers[axis]
-            try:
-                controller.runtime.commands.motion.moveabsolute(
-                    [axis], 
-                    [self.list_commands[self.test_axes.index(axis)] * -1],  # Negative for reverse
-                    [speed[self.test_axes.index(axis)]]
-                )
-                controller.runtime.commands.motion.waitformotiondone([axis])
-            except (ControllerAxisFaultException, ControllerOperationException) as e:
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    # Interactive per-axis handling; do not abort whole sequence here
-                    self.handle_faults(faults_per_axis)
-                return
-            except TestSequenceAbort as e:
-                return
+            retries = 0
+            retry_limit = 2
+            while retries <= retry_limit:
+                try:
+                    controller.runtime.commands.motion.moveabsolute(
+                        [axis], 
+                        [self.list_commands[self.test_axes.index(axis)] * -1],  # Negative for reverse
+                        [speed[self.test_axes.index(axis)]]
+                    )
+                    controller.runtime.commands.motion.waitformotiondone([axis])
+                    break
+                except (ControllerAxisFaultException, ControllerOperationException):
+                    faults_per_axis = self.check_for_faults(controller, [axis])
+                    try:
+                        fault_init = decode_faults(faults_per_axis, [axis], controller, self.fault_log)
+                        decoded = fault_init.get_fault()
+                        faults_list = decoded.get(axis, []) if isinstance(decoded, dict) else []
+                    except Exception:
+                        faults_list = []
+
+                    if 'PositionErrorFault' in faults_list:
+                        adj_count = self.gain_k_adjustments.get(axis, 0)
+                        if adj_count < 2:
+                            try:
+                                cfg = controller.configuration.parameters.get_configuration()
+                                current_k = float(cfg.axes[axis].servo.servoloopgaink.value)
+                                cfg.axes[axis].servo.servoloopgaink.value = current_k * 1.5
+                                controller.configuration.parameters.set_configuration(cfg)
+                                controller.reset()
+                                self.gain_k_adjustments[axis] = adj_count + 1
+                                self.station_print(f"Auto-tune: increased gain K by 50% on {axis} (reverse).", station_id=station_id)
+                            except Exception as e:
+                                self.station_print(f"Auto-tune failed to increase K on {axis}: {e}", station_id=station_id)
+                        try:
+                            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                            controller.runtime.commands.motion.enable([axis])
+                        except Exception:
+                            pass
+                        retries += 1
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        if faults_per_axis:
+                            self.handle_faults(faults_per_axis)
+                        return
+                except TestSequenceAbort:
+                    return
         
             # Check again before continuing
             if station_id in self.aborted_stations:
@@ -596,21 +703,40 @@ class burn_in():
         return faults
     
     def handle_faults(self, faults_per_axis):
-        """Handle faults per axis with interactive continue/abort. Acknowledges via DecodeFaults."""
+        """Handle faults per axis with interactive continue/abort. Acknowledges via DecodeFaults.
+        Includes auto-tune for PositionErrorFault by increasing servo gain K (capped) and retrying.
+        """
         try:
             for axis, faults in faults_per_axis.items():
-                # Axis may have already been removed
                 controller = self.station_controllers.get(axis)
                 if not controller:
                     continue
                 
-                # Decode and auto-acknowledge faults on this axis's controller
                 fault_init = decode_faults({axis: faults}, [axis], controller, self.fault_log)
                 decoded_faults = fault_init.get_fault()
                 fault_list = decoded_faults.get(axis, [])
                 if not fault_list:
-                    # Nothing to act on after ack
                     continue
+                
+                # Auto-tune on PositionErrorFault first
+                if 'PositionErrorFault' in fault_list:
+                    try:
+                        adj_count = self.gain_k_adjustments.get(axis, 0)
+                        if adj_count < 2:
+                            cfg = controller.configuration.parameters.get_configuration()
+                            current_k = float(cfg.axes[axis].servo.servoloopgaink.value)
+                            cfg.axes[axis].servo.servoloopgaink.value = current_k * 1.5
+                            controller.configuration.parameters.set_configuration(cfg)
+                            controller.reset()
+                            self.gain_k_adjustments[axis] = adj_count + 1
+                            self.stage_info.info(f"Auto-tune: increased gain K by 50% on {axis} (handle_faults)")
+                        controller.runtime.commands.fault_and_error.acknowledgeall(1)
+                        controller.runtime.commands.motion.enable([axis])
+                        # Continue testing this axis (no prompt)
+                        continue
+                    except Exception as e:
+                        self.stage_info.info(f"Auto-tune failed for {axis}: {e}")
+                        # Fall through to prompt
                 
                 # Prompt user: continue (keep axis) or abort axis
                 confirm = messagebox.askyesno(
@@ -618,7 +744,6 @@ class burn_in():
                     f'Axis {axis} has the following faults: {fault_list}.\n\nWould you like to continue testing this axis?'
                 )
                 if confirm:
-                    # Attempt to re-enable axis and continue
                     try:
                         controller.runtime.commands.motion.enable([axis])
                     except Exception:
@@ -626,14 +751,12 @@ class burn_in():
                     self.stage_info.info(f"Continuing after acknowledging faults on axis {axis}: {fault_list}")
                     continue
                 else:
-                    # Remove only this axis from burn-in
                     self.stage_info.info(f"User chose to abort axis {axis} after faults: {fault_list}")
                     try:
                         self.handle_burnin_error("Axis fault - user chose to abort axis", axis)
                     except Exception:
                         pass
             
-            # If no axes remain, stop the test sequence
             if not self.test_axes:
                 raise TestSequenceAbort("All axes have been removed from burn-in.", shown_message=True)
         except TestSequenceAbort:
