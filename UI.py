@@ -492,6 +492,13 @@ def UI():
                 )
                 return
 
+            # Immediately reflect UI state for allocated stations
+            try:
+                allocated_ids = [int(st[2:]) for st in allocated_stations]
+                secondary_ui.update_station_status(allocated_ids, running=True, serial=serial_number)
+            except Exception:
+                pass
+
             # Create station controllers dictionary
             station_controllers = {
                 station_manager.station_states[station]["axis_name"]: 
@@ -946,7 +953,7 @@ def UI():
     
     # Manual speed entry (disabled by default)
     ent_speed = tk.Entry(master=speed_frame, textvariable=var_speed, width=10, state=tk.DISABLED)
-    ent_speed.grid(row=1, column=0, columnspan=2, sticky='w')
+    ent_speed.grid(row=1, column=1, columnspan=2, sticky='w')
 
     # Ensure the row is tall enough to display radios + entry
     input_frame.rowconfigure(input_frame.speed_row, minsize=60)
