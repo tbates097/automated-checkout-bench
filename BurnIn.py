@@ -674,7 +674,7 @@ class burn_in():
     
         return separated_data
 
-    def calculate_dwell_time(self, total_cycle_time, duty_cycle):
+    def calculate_dwell_time(self, move_time, duty_cycle_percent):
         """
         Calculate the required dwell time to maintain the given duty cycle.
         
@@ -685,11 +685,10 @@ class burn_in():
         Returns:
         float: The calculated dwell time in seconds.
         """
-        # Calculate active time based on duty cycle
-        active_time = (duty_cycle / 100) * total_cycle_time
-        # Calculate dwell time as the remaining time in the cycle
-        dwell_time = total_cycle_time - active_time
-        return dwell_time
+        # Avoid divide-by-zero and extreme values that would yield impractical dwell
+        D = max(0.1, min(99.9, float(duty_cycle_percent))) / 100.0
+        dwell = move_time * (1.0 - D) / (2.0 * D)
+        return max(0.0, dwell)
     
     def check_for_faults(self, controller, axes):
         """Check for faults on specific axes."""
