@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import QApplication
 from station_manager import StationManager
 from station_manager_instance import set_station_manager
 from google.cloud import bigquery
+from station_selection_dialog import show_station_selection_dialog
 
 sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
 #sys.path.append(r"C:\Users\tbates\Python\shared")
@@ -477,20 +478,24 @@ def UI():
         program_id = id(threading.current_thread())
         
         try:
-            # Try to allocate stations
-            station_manager.refresh_station_status()
-            allocated_stations = station_manager.allocate_stations(
-                num_stations, program_id, serial_number
+            # Show station selection dialog
+            selection_result = show_station_selection_dialog(
+                window, num_stations, program_id, serial_number
             )
-            print(f'Allocated Stations: {allocated_stations}')
-            messagebox.showinfo("Connect Stages", f"Connect stages to the following stations: {allocated_stations}. Press OK to continue.")
-            if allocated_stations is None:
-                messagebox.showwarning(
-                    "No Stations Available", 
-                    f"Need {num_stations} stations, but not enough are available.\n"
-                    "Please wait for other tests to complete."
-                )
+            
+            # If user cancelled, return
+            if selection_result is None:
                 return
+            
+            # Get the allocated stations from the dialog result
+            allocated_stations = selection_result["stations"]
+            selection_mode = selection_result["mode"]
+            
+            print(f'Allocated Stations ({selection_mode}): {allocated_stations}')
+            messagebox.showinfo(
+                "Connect Stages", 
+                f"Connect stages to the following stations: {allocated_stations}. Press OK to continue."
+            )
 
             # Immediately reflect UI state for allocated stations
             try:
@@ -1019,7 +1024,7 @@ def UI():
     reconfigure_button = tk.Button(input_frame, text="Re-Configure", width=12, height=1, font=label_font, command=on_part_reconfigure)
     reconfigure_button.grid(row=input_frame.job_row, column=3, padx=standard_padx, pady=standard_pady)
     
-    lbl_op = tk.Label(master=input_frame, text="Operator", font=label_font)
+    lbl_op = tk.Label(master=input_frame, text="Employee Number", font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=standard_padx, pady=standard_pady)
     
     var_op = tk.StringVar(value=op_value)
