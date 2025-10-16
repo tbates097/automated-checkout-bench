@@ -179,3 +179,22 @@ class StationManager:
                 self.station_states[station_name]["status"] = "free"
                 self.station_states[station_name]["program_id"] = None
                 self.station_states[station_name]["serial_number"] = ""
+    
+    def _check_single_station(self, station, ip):
+        """Check connectivity of a single station"""
+        try:
+            # Simple ping-like check (replace with actual connectivity check if needed)
+            response = requests.get(f"http://{ip}", timeout=1)
+            return (station, True)
+        except:
+            return (station, False)
+    
+    def _update_station_status(self, station, is_connected):
+        """Update station status based on connectivity"""
+        if station in self.station_states:
+            # Only update if station is not currently in use
+            if self.station_states[station]["status"] != "in-use":
+                if is_connected:
+                    self.station_states[station]["status"] = "free"
+                else:
+                    self.station_states[station]["status"] = "offline"

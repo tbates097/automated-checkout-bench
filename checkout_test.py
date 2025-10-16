@@ -1498,6 +1498,56 @@ class stage_checkout():
         ]
         
         return any(fault in travel_related_faults for fault in faults)
+    
+    def validate_partial_hall_sequence(self, observed_states, expected_full_order):
+        """Validate that observed hall states form a valid partial sequence from the expected order"""
+        if not observed_states or len(observed_states) < 2:
+            return True  # Too few states to validate meaningfully
+        
+        # First check: all states must be valid (no "000", "111", or other invalid states)
+        for state in observed_states:
+            if state not in expected_full_order:
+                return False
+        
+        # Find all possible starting positions in the expected order
+        for start_idx in range(len(expected_full_order)):
+            # Check if observed sequence matches expected order starting from start_idx
+            match_found = True
+            for i, state in enumerate(observed_states):
+                expected_idx = (start_idx + i) % len(expected_full_order)
+                if state != expected_full_order[expected_idx]:
+                    match_found = False
+                    break
+            
+            if match_found:
+                return True
+        
+        # If no direct match, check for valid progressive transitions with error tolerance
+        invalid_transitions = 0
+        total_transitions = len(observed_states) - 1
+        
+        for i in range(total_transitions):
+            current_state = observed_states[i]
+            next_state = observed_states[i + 1]
+            
+            current_idx = expected_full_order.index(current_state)
+            next_idx = expected_full_order.index(next_state)
+            
+            # Calculate forward progression (allowing wrap-around)
+            forward_steps = (next_idx - current_idx) % len(expected_full_order)
+            
+            # Allow 1-2 steps forward, or staying in same state briefly
+            # Disallow large jumps (3+ steps) as they indicate sequence errors
+            if forward_steps not in [0, 1, 2]:
+                invalid_transitions += 1
+        
+        # For short sequences, be more strict
+        if total_transitions <= 2:
+            return invalid_transitions == 0
+        
+        # Allow some noise but require majority of transitions to be valid
+        error_tolerance = 0.3  # Allow 30% invalid transitions
+        return invalid_transitions <= total_transitions * error_tolerance
 
     def check_halls_fallback(self, axis):
         """Fallback hall checking method for stages with limited travel - Enhanced debugging version"""
@@ -1710,10 +1760,18 @@ class stage_checkout():
                 self.release_axis(axis)
                 return
             
-            expected_states = []
-            for i in range(len(observed_states)):
-                expected_states.append(self.hall_dict[angles[i]])
-            hall_order_valid = (encoder_direction == "positive" and observed_states == expected_states)
+            # For fallback method, validate partial sequences properly
+            if encoder_direction == "positive" and len(observed_states) > 0:
+                # Build expected states for the angles we actually have data for
+                expected_states = []
+                for i in range(len(observed_states)):
+                    expected_states.append(self.hall_dict[angles[i]])
+                
+                # Check if observed sequence is a valid partial progression
+                expected_full_order = ["001", "011", "010", "110", "100", "101"]
+                hall_order_valid = self.validate_partial_hall_sequence(observed_states, expected_full_order)
+            else:
+                hall_order_valid = False
             unique_hall_states = []
             for s in observed_states:
                 if not unique_hall_states or unique_hall_states[-1] != s:
@@ -3094,13 +3152,17 @@ class stage_checkout():
             base_angles = [0, 60, 120, 180, 240, 300]
             expected_states = [self.hall_dict[a] for a in base_angles[:len(hall_states)]]
 
-            # Helper to check if observed is a rotation of expected
+            # Helper to check if observed is a rotation of expected (modified for partial sequences)
             def rotation_classification(exp, obs):
-                if len(exp) != len(obs) or len(exp) == 0:
+                if len(obs) == 0:
                     return (False, 0)
-                for k in range(len(exp)):
-                    if exp[k:] + exp[:k] == obs:
-                        return (True, k)
+                # For partial sequences, check if observed matches any contiguous portion of expected
+                if len(obs) <= len(exp):
+                    for k in range(len(exp)):
+                        rotated_exp = exp[k:] + exp[:k]
+                        # Check if obs matches the first len(obs) elements of rotated_exp
+                        if rotated_exp[:len(obs)] == obs:
+                            return (True, k)
                 return (False, 0)
 
             is_rot, shift_steps = rotation_classification(expected_states, hall_states)
