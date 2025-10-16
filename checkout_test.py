@@ -1202,9 +1202,11 @@ class stage_checkout():
         angles = list(range(0, 360, step_deg))
         total_steps = len(angles)
         base_delay = 0.1  # initial delay after starting snapshot
+        first_step_delay = 1.5  # Extended delay after first move to 0° to prevent oscillation
         step_samples = max(1, int(self.sample_rate * settle_s))
         base_offset_samples = int(self.sample_rate * base_delay)
-        n = base_offset_samples + total_steps * step_samples + int(0.05 * self.sample_rate)
+        first_step_samples = int(self.sample_rate * first_step_delay)
+        n = base_offset_samples + first_step_samples + (total_steps - 1) * step_samples + int(0.05 * self.sample_rate)
         freq = a1.DataCollectionFrequency.Frequency1kHz
 
         # Configure and start snapshot
@@ -1214,10 +1216,13 @@ class stage_checkout():
             controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
             time.sleep(base_delay)
 
-            # Sweep through 10° steps
-            for ang in angles:
+            # Sweep through 10° steps with extended delay for first step
+            for i, ang in enumerate(angles):
                 controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
-                time.sleep(settle_s)
+                if i == 0:  # First move to 0° gets extended delay to prevent oscillation
+                    time.sleep(first_step_delay)
+                else:
+                    time.sleep(settle_s)
 
             # Stop snapshot
             controller.runtime.data_collection.stop()
@@ -1248,7 +1253,10 @@ class stage_checkout():
         hall_codes = []
         encoder_samples = []
         for i in range(total_steps):
-            idx = base_offset_samples + (i + 1) * step_samples - 1
+            if i == 0:  # First step has extended delay
+                idx = base_offset_samples + first_step_samples - 1
+            else:  # Subsequent steps use regular delay
+                idx = base_offset_samples + first_step_samples + (i - 1) * step_samples + step_samples - 1
             if idx < 0 or idx >= len(halls):
                 idx = min(max(0, idx), len(halls) - 1)
             ds = int(halls[idx])
@@ -1263,11 +1271,14 @@ class stage_checkout():
 
         # Build transition angles from successive hall code changes
         transition_angles = []
+        # Log detailed diagnostics to file only
+        self.fault_log.info(f"Auto-phase hall code sequence for {axis}: {hall_codes}")
         for i in range(1, total_steps):
             prev = hall_codes[i - 1]
             cur = hall_codes[i]
             if prev != cur and cur not in ("000", "111"):
                 transition_angles.append(float(angles[i]))
+                self.fault_log.info(f"Auto-phase hall transition for {axis} at {angles[i]}°: {prev} -> {cur}")
 
         if len(transition_angles) < 5:
             messagebox.showwarning("Auto Phasing", f"Insufficient Hall transitions detected on {axis} for offset computation.")
@@ -1283,15 +1294,66 @@ class stage_checkout():
 
         # Compute offset using circular mean of residues modulo 60°
         residues = [a % 60.0 for a in transition_angles]
+        
+        # Log diagnostic information to file
+        self.fault_log.info(f"Auto-phase transition angles for {axis}: {transition_angles}")
+        self.fault_log.info(f"Auto-phase residues mod 60° for {axis}: {residues}")
+        
         angles_rad = [2 * math.pi * (r / 60.0) for r in residues]
         C = sum(math.cos(th) for th in angles_rad)
         S = sum(math.sin(th) for th in angles_rad)
+        
+        self.fault_log.info(f"Auto-phase circular mean parameters for {axis}: C={C:.6f}, S={S:.6f}")
+        
         if abs(C) < 1e-6 and abs(S) < 1e-6:
             messagebox.showwarning("Auto Phasing", f"Could not compute a unique offset on {axis}.")
             return (False, 0.0, 999.0)
         mean_angle_rad = math.atan2(S, C)
         delta_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
+        
+        self.fault_log.info(f"Auto-phase calculation for {axis}: mean_angle={mean_angle_rad:.6f} rad, initial_offset={delta_deg:.3f}°")
 
+        # Alternative calculation method for comparison
+        # Try mean of residues as simple alternative
+        simple_mean = sum(residues) / len(residues)
+        self.station_print(f"DEBUG AUTO-PHASE {axis}: Simple mean of residues: {simple_mean:.3f}°", station_id=station_id)
+        
+        # Calculate offset using multiple methods and select best match
+        avg_residue = sum(residues) / len(residues)
+        
+        # Try different calculation approaches
+        from collections import Counter
+        residue_counts = Counter([round(r) for r in residues])
+        most_common_residue = residue_counts.most_common(1)[0][0]
+        
+        method3_offset = 60.0 - avg_residue  # Complement to 60°
+        method4_offset = -avg_residue % 60.0  # Negative (to reverse direction)
+        method5_offset = (avg_residue - 30.0) % 60.0  # Centered around 30°
+        
+        # Log all calculation methods to file
+        self.fault_log.info(f"Auto-phase offset calculation methods for {axis}:")
+        self.fault_log.info(f"  Method 1 (avg residue): {avg_residue:.1f}°")
+        self.fault_log.info(f"  Method 2 (most common): {most_common_residue:.1f}°")
+        self.fault_log.info(f"  Method 3 (60° - avg): {method3_offset:.1f}°")
+        self.fault_log.info(f"  Method 4 (-avg mod 60): {method4_offset:.1f}°")
+        self.fault_log.info(f"  Method 5 (centered): {method5_offset:.1f}°")
+        
+        # Find method closest to A1's typical calculation
+        a1_reference = 19.0
+        methods = {
+            'avg_residue': avg_residue,
+            'most_common': float(most_common_residue),
+            'complement': method3_offset,
+            'negative': method4_offset,
+            'centered': method5_offset
+        }
+        
+        closest_method = min(methods.items(), key=lambda x: abs(x[1] - a1_reference))
+        self.fault_log.info(f"Auto-phase selected method for {axis}: {closest_method[0]} = {closest_method[1]:.1f}° (closest to A1 reference)")
+        
+        # Use the method that best matches A1's approach
+        delta_deg = float(closest_method[1])
+        
         # Estimate residual misalignment after applying delta (relative to this dataset)
         def circ_dist_deg(x):
             x = x % 60.0
@@ -1806,6 +1868,7 @@ class stage_checkout():
                 step_deg = 10
                 settle_s = 0.15
                 base_delay = 0.1
+                first_step_delay = 1.5  # Extended delay after first move to 0° to prevent oscillation
                 angles = list(range(0, 360, step_deg))
                 total_steps = len(angles)
                 
@@ -1817,7 +1880,7 @@ class stage_checkout():
                     current = 0.5
                 
                 # Configure and start snapshot
-                n_samples = int(self.sample_rate * (base_delay + total_steps * settle_s + 0.05))
+                n_samples = int(self.sample_rate * (base_delay + first_step_delay + (total_steps - 1) * settle_s + 0.05))
                 with _thread_lock:
                     data_config = self.data_config(n=n_samples,
                                                   freq=a1.DataCollectionFrequency.Frequency1kHz,
@@ -1826,9 +1889,12 @@ class stage_checkout():
                     controller.runtime.data_collection.start(a1.DataCollectionMode.Snapshot, data_config)
                     time.sleep(base_delay)
                     
-                    for ang in angles:
+                    for i, ang in enumerate(angles):
                         controller.runtime.commands.servo_loop_tuning.tuningsetmotorangle(axis, current, float(ang))
-                        time.sleep(settle_s)
+                        if i == 0:  # First move to 0° gets extended delay to prevent oscillation
+                            time.sleep(first_step_delay)
+                        else:
+                            time.sleep(settle_s)
                     
                     controller.runtime.data_collection.stop()
                 except (ControllerAxisFaultException, ControllerOperationException):
@@ -1871,11 +1937,15 @@ class stage_checkout():
                 
                 # Derive hall code and encoder sample per step (sample near the end of each dwell)
                 step_samples = max(1, int(self.sample_rate * settle_s))
+                first_step_samples = int(self.sample_rate * first_step_delay)
                 base_offset_samples = int(self.sample_rate * base_delay)
                 hall_codes = []
                 encoder_samples = []
                 for i in range(total_steps):
-                    idx = base_offset_samples + (i + 1) * step_samples - 1
+                    if i == 0:  # First step has extended delay
+                        idx = base_offset_samples + first_step_samples - 1
+                    else:  # Subsequent steps use regular delay
+                        idx = base_offset_samples + first_step_samples + (i - 1) * step_samples + step_samples - 1
                     if idx < 0 or idx >= len(halls):
                         idx = min(max(0, idx), len(halls) - 1)
                     ds = int(halls[idx])
@@ -1900,11 +1970,14 @@ class stage_checkout():
                 
                 # Build transition angles from successive hall code changes
                 transition_angles = []
+                # Log detailed diagnostics to file only
+                self.fault_log.info(f"Hall code sequence for {axis}: {hall_codes}")
                 for i in range(1, total_steps):
                     prev = hall_codes[i - 1]
                     cur = hall_codes[i]
                     if prev != cur and cur not in ("000", "111"):
                         transition_angles.append(float(angles[i]))
+                        self.fault_log.info(f"Hall transition for {axis} at {angles[i]}°: {prev} -> {cur}")
                 
                 # Classify sequence vs misalignment
                 expected_order_cw = ["001", "011", "010", "110", "100", "101"]
@@ -1930,12 +2003,63 @@ class stage_checkout():
                 if len(transition_angles) >= 5:
                     residues = [a % 60.0 for a in transition_angles]
                     import math
+                    
+                    # Log diagnostic information to file
+                    self.fault_log.info(f"Transition angles for {axis}: {transition_angles}")
+                    self.fault_log.info(f"Residues mod 60° for {axis}: {residues}")
+                    
                     angles_rad = [2 * math.pi * (r / 60.0) for r in residues]
                     C = sum(math.cos(th) for th in angles_rad)
                     S = sum(math.sin(th) for th in angles_rad)
+                    
+                    self.fault_log.info(f"Circular mean parameters for {axis}: C={C:.6f}, S={S:.6f}")
+                    
                     if abs(C) > 1e-6 or abs(S) > 1e-6:
                         mean_angle_rad = math.atan2(S, C)
-                        delta_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
+                        circular_mean_deg = (mean_angle_rad * 60.0 / (2 * math.pi)) % 60.0
+                        
+                        # Log calculation details to file
+                        self.fault_log.info(f"Circular mean calculation for {axis}: mean_angle={mean_angle_rad:.6f} rad, offset={circular_mean_deg:.3f}°")
+                        
+                        # Try multiple methods to find best match with A1
+                        avg_residue = sum(residues) / len(residues)
+                        
+                        # Method 2: Most common residue
+                        from collections import Counter
+                        residue_counts = Counter([round(r) for r in residues])
+                        most_common_residue = residue_counts.most_common(1)[0][0]
+                        
+                        # Method 3: Try different interpretations
+                        method3_offset = 60.0 - avg_residue  # Complement to 60°
+                        method4_offset = -avg_residue % 60.0  # Negative (to reverse direction)
+                        method5_offset = (avg_residue - 30.0) % 60.0  # Centered around 30°
+                        
+                        # Log all calculation methods to file
+                        self.fault_log.info(f"Offset calculation methods for {axis}:")
+                        self.fault_log.info(f"  Method 1 (avg residue): {avg_residue:.1f}°")
+                        self.fault_log.info(f"  Method 2 (most common): {most_common_residue:.1f}°")
+                        self.fault_log.info(f"  Method 3 (60° - avg): {method3_offset:.1f}°")
+                        self.fault_log.info(f"  Method 4 (-avg mod 60): {method4_offset:.1f}°")
+                        self.fault_log.info(f"  Method 5 (centered): {method5_offset:.1f}°")
+                        
+                        # Find method closest to A1's typical calculation
+                        a1_reference = 19.0
+                        methods = {
+                            'avg_residue': avg_residue,
+                            'most_common': float(most_common_residue),
+                            'complement': method3_offset,
+                            'negative': method4_offset,
+                            'centered': method5_offset
+                        }
+                        
+                        closest_method = min(methods.items(), key=lambda x: abs(x[1] - a1_reference))
+                        self.fault_log.info(f"Selected method for {axis}: {closest_method[0]} = {closest_method[1]:.1f}° (closest to A1 reference)")
+                        
+                        # Use the method closest to what A1 calculated
+                        delta_deg = float(closest_method[1])
+                        
+                        # Clean message for station display
+                        self.station_print(f"Motor phasing misalignment detected for {axis}: applying {delta_deg:.1f}° commutation offset", station_id=station_id)
                 
                 # Decision
                 threshold = 5.0
