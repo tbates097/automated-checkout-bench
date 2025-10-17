@@ -1,0 +1,56 @@
+{
+  "part_id": "TESTJOB123-01",
+  "job_number": "TESTJOB123",
+  "station": "ST01",
+  "operator": "TBates",
+  "stage_type": "PRO165LM",
+  "test_date": "2025-10-16",
+  "test_time": "14:47:23",
+  "test_start_time": "2025-10-16 14:30:00",
+  "test_end_time": "2025-10-16 14:47:23",
+  "test_duration_minutes": 17.38,
+  "test_status": "Complete",
+  "comments": "Standard checkout test",
+  
+  "halls": {
+    "fallback_method": "",
+    "mset_method": "Passed"
+  },
+  
+  "commutation_offset": -15.2,
+  
+  "positions": {
+    "ccw_limit": -12.990001525878906,
+    "cw_limit": 13.24291717529297,
+    "ccw_hardstop": -14.186274719238282,
+    "cw_hardstop": 14.453761901855469
+  },
+  
+  "distances": {
+    "limit_to_limit": 26.2329,
+    "hardstop_to_hardstop": 28.64,
+    "marker_to_limit": 5.8
+  },
+  
+  "current_analysis": {
+    "peak_running_current": 2.345,
+    "rms_running_current": 1.234
+  },
+  
+  "faults_occurred": [
+    {
+      "fault_type": "PositionErrorFault",
+      "timestamp": "2025-10-16 14:32:15",
+      "resolved": true
+    }
+  ],
+  
+  "rework": [
+    {
+      "issue": "PositionErrorFault",
+      "solution": "Adjusted servo gains K from 150 to 120",
+      "timestamp": "2025-10-16 14:35:00",
+      "operator": "TBates"
+    }
+  ]
+}

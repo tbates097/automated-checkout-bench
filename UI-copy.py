@@ -25,7 +25,6 @@ from station_manager import StationManager
 from station_manager_instance import set_station_manager
 from google.cloud import bigquery
 from station_selection_dialog import show_station_selection_dialog
-import secondary_ui_registry
 
 sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
 #sys.path.append(r"C:\Users\tbates\Python\shared")
@@ -147,13 +146,8 @@ def launch_secondary_ui(focus_widget=None):
     """Launch the secondary UI in a new thread."""
     def run_secondary_ui():
         global secondary_ui
-        secondary_ui_instance = SecondaryUI()
-        
-        # Set in both global variable and registry for compatibility
-        secondary_ui = secondary_ui_instance
-        secondary_ui_registry.set_secondary_ui(secondary_ui_instance)
-        
-        secondary_ui_instance.run()
+        secondary_ui = SecondaryUI()
+        secondary_ui.run()
 
     thread = threading.Thread(target=run_secondary_ui, daemon=True)
     thread.start()
@@ -292,29 +286,32 @@ def UI():
     
     # Configure columns and rows with more space for left side layout
     input_frame.columnconfigure([0, 1, 2, 3], weight=1, minsize=830 / 4, uniform='column')
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], weight=1, minsize=35)
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], weight=1, minsize=35)
 
     # Define row indices with better spacing and grouping
     input_frame.h1_row = 0        # Top separator
     input_frame.config_label_row = 1  # "Configuration" heading
-    input_frame.num_axes_row = 2      # Number of Stages & Absolute Encoder
-    input_frame.h2_row = 3        # Separator after configuration
+    input_frame.ID_row = 2        # Job Number section
+    input_frame.smart_string_row = 3  # Smart String display
+    input_frame.num_axes_row = 4      # Number of Stages & Absolute Encoder
+    input_frame.h2_row = 5        # Separator after configuration
     
-    input_frame.params_label_row = 4  # "Test Parameters" heading
-    input_frame.speed_row = 5         # Burn-In Speed & Duty Cycle
-    input_frame.cycles_row = 6        # Burn-In Time
-    input_frame.bus_row = 7
-    input_frame.h3_row = 8        # Separator after parameters
+    input_frame.params_label_row = 6  # "Test Parameters" heading
+    input_frame.speed_row = 7         # Burn-In Speed & Duty Cycle
+    input_frame.cycles_row = 8        # Burn-In Time
+    input_frame.bus_row = 9
+    input_frame.h3_row = 10        # Separator after parameters
     
-    input_frame.doc_label_row = 9    # "Documentation" heading
-    input_frame.op_row = 10           # Operator
-    input_frame.comm_row = 11         # Comments
-    input_frame.h4_row = 12       # Separator before Run button
-    input_frame.run_row = 13      # Run button
-    input_frame.out_row = 14      # Output area
+    input_frame.doc_label_row = 11    # "Documentation" heading
+    input_frame.job_row = 12          # Part Number (moved here)
+    input_frame.op_row = 13           # Operator
+    input_frame.comm_row = 14         # Comments
+    input_frame.h4_row = 15       # Separator before Run button
+    input_frame.run_row = 16      # Run button
+    input_frame.out_row = 17      # Output area
 
     # Configure rows with more space
-    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], weight=1, minsize=35)
+    input_frame.rowconfigure([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], weight=1, minsize=35)
 
     # Define Automation1 Studio-inspired color palette
     BACKGROUND = "#F0F0F0"  # Light gray background
@@ -477,43 +474,108 @@ def UI():
         global allocated_stations
         """Start a test thread for the required number of stations."""
         num_stations = var_num_axes.get()
+        serial_number = var_job.get()
         program_id = id(threading.current_thread())
         
-        # Collect test parameters
-        test_params = {
-            'speed': 'default' if speed_mode_var.get() == 'default' else float(var_speed.get()),
-            'burnin_time': 4 if BI_state == 'default' else int(var_time.get()),
-            'operator': str(var_op.get()),
-            'comments': str(var_comm.get()),
-            'duty_cycle': int(var_duty_cycle.get()),
-            'absolute': absolute,
-            'bus_voltage': bus_volt
-        }
-        
         try:
-            # Show enhanced station selection dialog that handles everything
-            result = show_station_selection_dialog(
-                window, num_stations, program_id, test_params
+            # Show station selection dialog
+            selection_result = show_station_selection_dialog(
+                window, num_stations, program_id, serial_number
             )
             
             # If user cancelled, return
-            if result is None:
+            if selection_result is None:
                 return
             
-            # The enhanced dialog handles everything - test is already running
-            print("Test initialization completed via enhanced station selection dialog")
+            # Get the allocated stations from the dialog result
+            allocated_stations = selection_result["stations"]
+            selection_mode = selection_result["mode"]
             
-            # Save user inputs for next time
-            user_data = {
-                "speed": test_params['speed'],
-                "operator": test_params['operator'],
-                "comments": test_params['comments'],
-                "duty_cycle": test_params['duty_cycle']
+            print(f'Allocated Stations ({selection_mode}): {allocated_stations}')
+            messagebox.showinfo(
+                "Connect Stages", 
+                f"Connect stages to the following stations: {allocated_stations}. Press OK to continue."
+            )
+
+            # Immediately reflect UI state for allocated stations
+            try:
+                allocated_ids = [int(st[2:]) for st in allocated_stations]
+                secondary_ui.update_station_status(allocated_ids, running=True, serial=serial_number)
+            except Exception:
+                pass
+
+            # Create station controllers dictionary
+            station_controllers = {
+                station_manager.station_states[station]["axis_name"]: 
+                station_manager.station_dict[station]
+                for station in allocated_stations
             }
-            save_user_inputs(user_data)
-            
+
+            def run_test():
+                # Get only newly allocated stations for this run
+                new_stations = [int(station[2:]) for station, state in station_manager.station_states.items()
+                                if state["program_id"] == program_id 
+                                and state["status"] == "in-use"
+                                and int(station[2:]) not in previously_allocated_stations]
+                
+                # Update our tracking of allocated stations
+                previously_allocated_stations.update(new_stations)
+                
+                try:
+                    for station in new_stations:  # Only process new stations
+                        # Assign serial number to each station
+                        text_widget = secondary_ui.station_widgets[station]["txt_logs"]
+                        station_states[station]["serial_number"] = serial_number
+                        station_states[station]["running"] = True  # Mark as running
+                        
+                        # Instead of creating new TextLogger, let's use the existing one from the station
+                        if station in secondary_ui.station_loggers:
+                            sys.stdout = secondary_ui.station_loggers[station]
+                        else:
+                            # Only create new logger if one doesn't exist
+                            secondary_ui.station_loggers[station] = TextLogger(text_widget, clear_existing=False)
+                            sys.stdout = secondary_ui.station_loggers[station]
+                    
+                    # Only update UI for new stations
+                    secondary_ui.update_station_status(new_stations, running=True, serial=serial_number)
+                    user_data = {
+                                "speed": var_speed.get(),
+                                "job": var_job.get(),
+                                "operator": var_op.get(),
+                                "comments": var_comm.get(),
+                                "duty_cycle": var_duty_cycle.get()
+                            }
+                    save_user_inputs(user_data)
+                    # Your existing test logic here
+                    test(program_id, serial_number, station_controllers)
+                except Exception as e:
+                    messagebox.showerror(
+                        "Test Error",
+                        f"An error occurred during testing: {str(e)}"
+                    )
+                finally:
+                    # Always release stations when done
+                    try:
+                        if allocated_stations:  # Only try to release if we have stations
+                            station_manager.release_stations(allocated_stations)
+                            # Remove each individual station number from previously_allocated_stations
+                            for station in allocated_stations:
+                                station_num = int(station[2:])  # Convert 'ST01' to 1
+                                if station_num in previously_allocated_stations:
+                                    previously_allocated_stations.remove(station_num)
+                    except ValueError as e:
+                        print(f"Station Release Error (likely already released): {str(e)}")
+                    except Exception as e:
+                        print(f"Unexpected error during station release: {str(e)}")
+                    secondary_ui.update_station_status(new_stations, running=False, serial="")
+                    available_stations = station_manager.get_available_stations()
+                    print(f"Stations {new_stations} are now free.")
+                    window.after(0, lambda: btn_run.config(state=tk.NORMAL))
+
             # Disable run button during test
             btn_run.config(state=tk.DISABLED)
+            thread = threading.Thread(target=run_test, daemon=True)
+            thread.start()
 
         except Exception as e:
             messagebox.showerror(
@@ -528,8 +590,8 @@ def UI():
         """
         btn_run.config(state=tk.NORMAL)
     
-    def test(program_id, serial_number, station_controllers, stage_type=None, job=None):
-        """Main test function in UI.py - updated for new workflow without removed UI elements"""
+    def test(program_id, serial_number, station_controllers):
+        """Main test function in UI.py"""
         def prompt_user(message):
             text_logger.write(message)
             txt_outStr.delete(1.0, tk.END)
@@ -540,15 +602,14 @@ def UI():
         
         sys.stdout = text_logger
         
-        # These parameters are now passed from the station dialog rather than UI elements
-        stage_type = stage_type or "Unknown"  # Will be provided by station dialog
+        stage_type = str(part_number.get())
         num_axes = int(var_num_axes.get())
         # Pass 'default' when Default mode is selected; otherwise pass manual numeric value
         if speed_mode_var.get() == 'default':
             speed = 'default'
         else:
             speed = float(var_speed.get())
-        job = job or "Unknown"  # Will be provided by station dialog (first 6 chars of serial)
+        job = str(var_job.get())
         op = str(var_op.get())
         comm = str(var_comm.get())
         duty_cycle = int(var_duty_cycle.get())
@@ -695,6 +756,103 @@ def UI():
             del test
         
         gc.collect()
+
+    def on_scan():
+        global specs_dict, param_dict, smartstring_travel, full_smart_string
+        
+        # Get job number from entry field
+        job_num = var_job.get()
+        if not job_num:
+            messagebox.showerror("Error", "Please enter a job number")
+            return
+            
+        # Query for part description
+        client = JobQueryClient()
+        part_num, part_desc = client.get_part_info(job_num)
+        
+        # Choose the correct smart string source
+        smart_string = None
+        if is_smart_string(part_num):
+            smart_string = part_num
+        elif is_smart_string(part_desc):
+            smart_string = part_desc
+        else:
+            messagebox.showerror("Error", "No valid smart string found in PartNum or PartDescription")
+            return
+        
+        # Display only the smart string
+        var_smart_string.set(smart_string)
+        
+        # Store the full smart string for MCD naming
+        full_smart_string = smart_string
+        
+        # Parse smart string
+        part_num_parsed, smartstring_travel = parse_smart_string(smart_string)
+        
+        if not part_num_parsed:
+            messagebox.showerror("Error", "Could not parse part number from smart string")
+            return
+            
+        # Update part number entry field
+        part_number.set(part_num_parsed)
+        
+        # Force UI to refresh and display the updated values before opening dialog
+        window.update_idletasks()
+
+        # Continue with existing BallscrewSizer flow using extracted part number
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        app_instance = App()
+        
+        try:
+            config_selections, param_dict = app_instance.show_popup_config_dialog(stage=part_num_parsed)
+        except (TypeError, ValueError):
+            app.quit()
+            return
+            
+        if config_selections:
+            specs_dict = config_selections
+        else:
+            print("No stage specifications found.")
+
+        app_instance.deleteLater()  # Close the App instance
+        del app_instance      # Ensure the instance is deleted
+        app.quit()           # Quit the QApplication
+
+    def on_part_reconfigure():
+        """Re-configure BallscrewSizer with manually edited part number"""
+        global specs_dict, param_dict, smartstring_travel, full_smart_string
+        
+        # Get part number from entry field
+        part_num = part_number.get()
+        if not part_num or part_num == "Scan Part Number Barcode":
+            messagebox.showerror("Error", "Please enter a valid part number")
+            return
+        
+        # Clear full smart string since manual entry doesn't provide barcode-scanned smart string
+        full_smart_string = None
+            
+        # Continue with existing BallscrewSizer flow using entered part number
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        app_instance = App()
+        
+        try:
+            config_selections, param_dict = app_instance.show_popup_config_dialog(stage=part_num)
+        except (TypeError, ValueError):
+            app.quit()
+            return
+            
+        if config_selections:
+            specs_dict = config_selections
+        else:
+            print("No stage specifications found.")
+
+        app_instance.deleteLater()  # Close the App instance
+        del app_instance      # Ensure the instance is deleted
+        app.quit()           # Quit the QApplication
     
     def bus_def():
         global bus_volt
@@ -743,6 +901,26 @@ def UI():
     standard_padx = 10  # Keep the same
     standard_pady = 6   # Reduced from 8
 
+    # Job Number section (moved to top)
+    lbl_job_top = tk.Label(master=input_frame, text="Job Number", font=label_font)
+    lbl_job_top.grid(row=input_frame.ID_row, column=0, padx=standard_padx, pady=standard_pady)
+
+    var_job = tk.StringVar(value=job_value)
+    ent_job_top = tk.Entry(input_frame, textvariable=var_job, width=25, font=("Segoe UI", 9))
+    ent_job_top.grid(row=input_frame.ID_row, column=1, padx=standard_padx, pady=standard_pady)
+    ent_job_top.bind("<FocusIn>", on_entry_focus)
+    # Initial focus will be set after window positioning
+
+    scan_button = tk.Button(input_frame, text="Configure", width=15, height=1, font=label_font, command=on_scan)
+    scan_button.grid(row=input_frame.ID_row, column=2, columnspan=2, padx=standard_padx, pady=standard_pady)
+
+    # Smart String display section
+    lbl_smart_string = tk.Label(master=input_frame, text="Smart String", font=label_font)
+    lbl_smart_string.grid(row=input_frame.smart_string_row, column=0, padx=standard_padx, pady=standard_pady)
+    
+    var_smart_string = tk.StringVar(value="")
+    ent_smart_string = tk.Entry(master=input_frame, textvariable=var_smart_string, width=50, state='readonly')
+    ent_smart_string.grid(row=input_frame.smart_string_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
 
     # Configuration section
     lbl_num_axes = tk.Label(master=input_frame, text="Number Of Stages", font=label_font)
@@ -833,6 +1011,19 @@ def UI():
     bus_160 = tk.Radiobutton(master=input_frame, text="160v", variable=bus_var, value="160", command=bus_def)
     bus_160.grid(row=input_frame.bus_row, column=3, padx=standard_padx, pady=standard_pady)
 
+    # Part Number section (moved from top)
+    lbl_stage = tk.Label(master=input_frame, text="Part Number", font=label_font)
+    lbl_stage.grid(row=input_frame.job_row, column=0, padx=standard_padx, pady=standard_pady)
+    
+    global part_number
+    part_number = tk.StringVar(value="Scan Part Number Barcode")
+    part_entry = tk.Entry(master=input_frame, textvariable=part_number, width=35)
+    part_entry.grid(row=input_frame.job_row, column=1, columnspan=2, padx=standard_padx, pady=standard_pady)
+    part_entry.bind("<FocusIn>", on_entry_focus)
+    
+    reconfigure_button = tk.Button(input_frame, text="Re-Configure", width=12, height=1, font=label_font, command=on_part_reconfigure)
+    reconfigure_button.grid(row=input_frame.job_row, column=3, padx=standard_padx, pady=standard_pady)
+    
     lbl_op = tk.Label(master=input_frame, text="Employee Number", font=label_font)
     lbl_op.grid(row=input_frame.op_row, column=0, padx=standard_padx, pady=standard_pady)
     
@@ -864,6 +1055,7 @@ def UI():
         try:
             user_data = {
                 "speed": var_speed.get(),
+                "job": var_job.get(),
                 "operator": var_op.get(),
                 "comments": var_comm.get(),
                 "duty_cycle": var_duty_cycle.get()
@@ -881,7 +1073,7 @@ def UI():
     
     # Bind the closing protocol
     window.protocol("WM_DELETE_WINDOW", on_closing)
-    launch_secondary_ui()
+    launch_secondary_ui(ent_job_top)
 
     # Enhanced ttk styling for Automation1 look
     style = ttk.Style()
@@ -926,7 +1118,7 @@ def UI():
     }
 
     # Apply entry style to all entry fields
-    for entry in [ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_op, ent_comments]:
+    for entry in [ent_job_top, ent_smart_string, part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_other, ent_op, ent_comments]:
         entry.configure(**entry_style)
 
     # Main input fields (darker text)
@@ -983,8 +1175,8 @@ def UI():
     }
 
     # Define main input fields
-    main_input_labels = [lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, lbl_cycles, lbl_bus, lbl_op, lbl_comments]  # Main input labels
-    main_input_entries = [ent_num_axes, ent_speed, ent_duty_cycle, ent_op, ent_comments]  # Their corresponding entry fields
+    main_input_labels = [lbl_job_top, lbl_smart_string, lbl_stage, lbl_num_axes, lbl_abs, lbl_speed, lbl_duty_cycle, lbl_cycles, lbl_bus, lbl_op, lbl_comments]  # Main input labels
+    main_input_entries = [ent_job_top, ent_smart_string, part_entry, ent_num_axes, ent_speed, ent_duty_cycle, ent_op, ent_comments]  # Their corresponding entry fields
     
     # First apply base styles to all widgets
     for widget in input_frame.winfo_children():
@@ -1036,6 +1228,18 @@ def UI():
         pady=10
     )
     
+    scan_button.configure(
+        **action_button_style,
+        padx=15,
+        pady=8
+    )
+    
+    reconfigure_button.configure(
+        **action_button_style,
+        padx=10,
+        pady=8
+    )
+    
     # Configure frames with consistent borders
     input_frame.configure(
         bg=BACKGROUND,
@@ -1083,6 +1287,9 @@ def UI():
     
     sep4 = tk.Frame(master=input_frame, height=1, bg=BORDER)
     sep4.grid(row=input_frame.h4_row, column=0, columnspan=4, sticky='ew', padx=20, pady=5)
+    
+    # Set initial focus to job number entry
+    window.after(200, lambda: (ent_job_top.focus_set(), ent_job_top.select_range(0, tk.END)))
     
     window.mainloop()
     

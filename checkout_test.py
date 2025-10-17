@@ -29,6 +29,9 @@ from exceptions import TestSequenceAbort
 from BurnIn import burn_in
 import shutil
 from GenerateMCD_v2 import AerotechController
+from database_part_collector import PartResultsCollector
+from rework_tracker import ReworkTracker
+from rework_dialog import show_rework_solution_dialog
 
 sys.path.append(r"K:\10. Released Software\Shared Python Programs\production-2.1")
 from a1_file_handler import DatFile
@@ -84,6 +87,8 @@ class stage_checkout():
         self.param_dict = param_dict
         self.full_smart_string = kwargs.get('full_smart_string', None)
         self.bus_voltage = kwargs.get('bus_voltage', '80')  # Default to 80V if not provided
+        self.serial_numbers = kwargs.get('serial_numbers', [])  # Individual serial numbers per station
+        self.part_number = kwargs.get('part_number', stage_type)  # Parsed part number from smart string
         
         self.sample_rate = 1000
         
@@ -177,6 +182,16 @@ class stage_checkout():
 
         # Track servo gain K adjustments per axis to avoid runaway increases
         self.gain_k_adjustments = {}
+        
+        # Initialize database part collectors for each station (will be set up after job_log_dir is created)
+        self.part_collectors = {}
+        
+        # Initialize rework tracker for fault-to-solution correlation
+        self.rework_tracker = ReworkTracker()
+        
+        # API configuration - will be used when database API is available
+        self.database_api_enabled = False  # Set to True when API is available
+        self.database_api_url = None  # Will be set when API endpoint is provided
 
     def abort_test(self, axis):
         """Handle abort button click for a specific axis"""
@@ -206,6 +221,8 @@ class stage_checkout():
                 fault_list = decoded_faults.get(axis, []) if isinstance(decoded_faults, dict) else []
                 fault_text = ", ".join(fault_list) if fault_list else str(decoded_faults)
                 if fault_text:
+                    # Capture fault data for database before showing error
+                    self._capture_fault_data(axis, fault_list, resolved=False)
                     messagebox.showerror("Axis Fault on Abort", f"Axis {axis} reported fault(s): {fault_text}")
         except Exception:
             # Non-fatal if fault decoding fails during abort
@@ -219,6 +236,16 @@ class stage_checkout():
         
         # Update UI
         self.secondary_ui.update_station_status(station_id, running=False, serial="")
+        
+        # Generate database JSON for aborted station
+        if axis in self.part_collectors:
+            try:
+                self.part_collectors[axis].set_test_status("Aborted")
+                db_json = self.part_collectors[axis].get_database_json()
+                self.station_print(f"Database record generated for {db_json['StageSerialNumber']} (Aborted)", station_id=station_id)
+                self._send_to_database_api(db_json, "Aborted")
+            except Exception as e:
+                self.station_print(f"Error generating database record: {str(e)}", station_id=station_id)
         
         # Immediately release this station in StationManager so it becomes available
         try:
@@ -261,6 +288,18 @@ class stage_checkout():
                 self.station_print(f"Station {station_id} has been released", station_id=station_id)
         except Exception:
             pass
+        
+        # Generate database JSON for released station
+        if axis in self.part_collectors:
+            try:
+                self.part_collectors[axis].set_test_status("Failed")
+                db_json = self.part_collectors[axis].get_database_json()
+                if station_id is not None:
+                    self.station_print(f"Database record generated for {db_json['StageSerialNumber']} (Failed)", station_id=station_id)
+                    self._send_to_database_api(db_json, "Failed")
+            except Exception as e:
+                if station_id is not None:
+                    self.station_print(f"Error generating database record: {str(e)}", station_id=station_id)
         # Cleanup data structures
         try:
             if axis in getattr(self, 'test_axes', []):
@@ -351,10 +390,26 @@ class stage_checkout():
         if spec is None:
             raise ValueError(f"Specification '{spec_key}' not found in specs_dict")
         
+        # Handle empty or whitespace-only strings (common for continuous rotary stages)
+        if isinstance(spec, str) and not spec.strip():
+            # For Travel specifically, try to get from param_dict as fallback
+            if spec_key == 'Travel':
+                try:
+                    return self.get_param_value('NominalTravel')
+                except ValueError:
+                    # If NominalTravel also not available, default to 360 for rotary stages
+                    return 360.0
+            else:
+                raise ValueError(f"Specification '{spec_key}' is empty and no fallback available")
+        
         try:
             if isinstance(spec, (int, float)):
                 return float(spec)
-            return float(str(spec).split()[0])
+            # Split and check if we have any parts
+            parts = str(spec).split()
+            if not parts:
+                raise ValueError(f"Specification '{spec_key}' results in empty list after split")
+            return float(parts[0])
         except (AttributeError, ValueError, TypeError) as e:
             raise ValueError(f"Could not convert {spec_key}={spec} to float: {e}")
     
@@ -482,6 +537,30 @@ class stage_checkout():
             }
         
         self.init_logger()
+        
+        # Initialize database part collectors for each station after job_log_dir is set
+        for i, axis in enumerate(self.test_axes):
+            # Use individual serial number for this station, fallback to job number if not available
+            if i < len(self.serial_numbers) and self.serial_numbers[i]:
+                part_serial = self.serial_numbers[i]
+            else:
+                part_serial = f"{self.job}-{i+1:02d}"  # Fallback to job-based naming
+            
+            self.part_collectors[axis] = PartResultsCollector(
+                job_number=part_serial,  # Use individual serial number as primary identifier
+                station=axis,
+                operator=self.op,
+                stage_type=self.stage_type,
+                comments=self.comments,
+                test_axes=self.test_axes,
+                folder=self.job_log_dir,
+                part_number=self.part_number  # Use parsed part number from smart string
+            )
+            
+            # Check for pending rework for this stage serial number
+            stage_serial = self.part_collectors[axis].stage_serial_number
+            self._check_and_handle_pending_rework(axis, stage_serial)
+        
         self.fault_log.info(f'Model: {self.stage_type}.  Serial Number: {self.job}.  On Station(s): {", ".join(self.test_axes)}')
         self.stage_info.info(f'Model: {self.stage_type}.  Serial Number: {self.job}.  On Station(s): {", ".join(self.test_axes)}')
         
@@ -521,6 +600,12 @@ class stage_checkout():
 
         # Use full smart string for filename, fallback to stage_type if not available
         smart_string_for_filename = self.full_smart_string or self.stage_type
+        
+        # Debug current working directory
+        current_cwd = os.getcwd()
+        station_id = self.axis_to_station_map.get(self.test_axes[0]) if self.test_axes else None
+        self.station_print(f"DEBUG: Current working directory during MCD generation: {current_cwd}", station_id=station_id)
+        self.station_print(f"DEBUG: Python path: {sys.path[:3]}...", station_id=station_id)
         
         mcd_processor = AerotechController.for_checkout_workflow(
             smart_string=smart_string_for_filename,
@@ -678,6 +763,9 @@ class stage_checkout():
                                 self.param_dict
                             )
                         BI.initialize_burnin(self.station_controllers)
+                        
+                        # Extract current analysis data from burn-in results
+                        self.extract_current_analysis_from_burnin(BI)
 
                         time.sleep(5)
                         self.home_stages()
@@ -702,6 +790,61 @@ class stage_checkout():
                             checkout_sheet = Checkout_Sheet(job_with_suffix, axis_data)
                             checkout_sheet.duplicate_sheet()
                             checkout_sheet.populate_sheet()
+                    
+                    def post_burn_in(axis, direction):
+                        """Handle limit check for a single axis (limit only, no hardstop)."""
+                        self.check_single_axis_limit(axis, direction, 'hardstop and limit check', full_sequence=False)
+
+                    try:
+                        # Run CCW checks in parallel
+                        threads = []
+                        for axis in self.test_axes:
+                            thread = self.create_tracked_thread(target=post_burn_in, axis=axis, args=(axis, 'ccw'))
+                            threads.append(thread)
+                            thread.start()
+            
+                        for thread in threads:
+                            thread.join()
+                
+                        # Check if we still have axes after CCW
+                        if not self.test_axes:
+                            raise TestSequenceAbort("All axes have been aborted", shown_message=True)
+            
+                        time.sleep(5)
+
+                        # Run CW checks in parallel 
+                        threads = []
+                        for axis in self.test_axes:
+                            thread = self.create_tracked_thread(target=post_burn_in, axis=axis, args=(axis, 'cw'))
+                            threads.append(thread)
+                            thread.start()
+            
+                        for thread in threads:
+                            thread.join()
+                
+                        # Check if we still have axes after CW
+                        if not self.test_axes:
+                            raise TestSequenceAbort("All axes have been aborted", shown_message=True)
+            
+                        time.sleep(5)
+            
+                    except TestSequenceAbort as e:
+                        # Clean up any remaining axes
+                        for axis in list(self.test_axes):
+                            try:
+                                controller = self.station_controllers[axis]
+                                controller.runtime.commands.motion.abort([axis])
+                                controller.runtime.commands.motion.disable([axis])
+                            except:
+                                pass
+                        raise  # Re-raise to stop the test sequence
+
+                    for axis in list(self.test_axes):
+                        try:
+                            controller = self.station_controllers[axis]
+                            controller.runtime.commands.motion.disable([axis])
+                        except:
+                            pass
 
                 else:
                     try:
@@ -756,6 +899,9 @@ class stage_checkout():
                                 self.param_dict
                             )
                         BI.initialize_burnin(self.station_controllers)
+                        
+                        # Extract current analysis data from burn-in results
+                        self.extract_current_analysis_from_burnin(BI)
                     except TestSequenceAbort:
                         raise
                     try:    
@@ -780,15 +926,85 @@ class stage_checkout():
                         
                     except TestSequenceAbort:
                         raise
+
+                    def post_burn_in(axis, direction):
+                        """Handle limit check for a single axis (limit only, no hardstop)."""
+                        self.check_single_axis_limit(axis, direction, 'hardstop and limit check', full_sequence=False)
+
+                    try:
+                        # Run CCW checks in parallel
+                        threads = []
+                        for axis in self.test_axes:
+                            thread = self.create_tracked_thread(target=post_burn_in, axis=axis, args=(axis, 'ccw'))
+                            threads.append(thread)
+                            thread.start()
+            
+                        for thread in threads:
+                            thread.join()
+                
+                        # Check if we still have axes after CCW
+                        if not self.test_axes:
+                            raise TestSequenceAbort("All axes have been aborted", shown_message=True)
+            
+                        time.sleep(5)
+
+                        # Run CW checks in parallel 
+                        threads = []
+                        for axis in self.test_axes:
+                            thread = self.create_tracked_thread(target=post_burn_in, axis=axis, args=(axis, 'cw'))
+                            threads.append(thread)
+                            thread.start()
+            
+                        for thread in threads:
+                            thread.join()
+                
+                        # Check if we still have axes after CW
+                        if not self.test_axes:
+                            raise TestSequenceAbort("All axes have been aborted", shown_message=True)
+            
+                        time.sleep(5)
+            
+                    except TestSequenceAbort as e:
+                        # Clean up any remaining axes
+                        for axis in list(self.test_axes):
+                            try:
+                                controller = self.station_controllers[axis]
+                                controller.runtime.commands.motion.abort([axis])
+                                controller.runtime.commands.motion.disable([axis])
+                            except:
+                                pass
+                        raise  # Re-raise to stop the test sequence
+
                     try:
                         time.sleep(5)
                         self.home_stages()
                     except TestSequenceAbort:
                         raise
+                
+                for axis in list(self.test_axes):
+                    try:
+                        controller = self.station_controllers[axis]
+                        controller.runtime.commands.motion.disable([axis])
+                    except:
+                        pass
+
                 # Only print completion if we get here
                 if self.test_axes:  # Check if we still have axes to test
                     station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
                     self.station_print(f"Test completed for {axis}.", station_id=station_id)
+                    
+                    # Generate database JSON for completed tests
+                    for axis in self.test_axes:
+                        if axis in self.part_collectors:
+                            try:
+                                self.part_collectors[axis].set_test_status("Complete")
+                                db_json = self.part_collectors[axis].get_database_json()
+                                axis_station_id = self.axis_to_station_map[axis]
+                                self.station_print(f"Database record generated for {db_json['StageSerialNumber']} (Complete)", station_id=axis_station_id)
+                                self._send_to_database_api(db_json, "Complete")
+                            except Exception as e:
+                                axis_station_id = self.axis_to_station_map[axis]
+                                self.station_print(f"Error generating database record: {str(e)}", station_id=axis_station_id)
 
             except TestSequenceAbort:
                 raise
@@ -909,6 +1125,16 @@ class stage_checkout():
         
         fault_init = decode_faults(faults_per_axis, [affected_axis], controller, self.fault_log)
         decoded_faults = fault_init.get_fault()
+        
+        # Track faults in database collector
+        for axis, faults in decoded_faults.items():
+            if faults and axis in self.part_collectors:
+                for fault in faults:
+                    self.part_collectors[axis].add_fault(
+                        fault_type=fault,
+                        description=f"Fault occurred during {test}",
+                        resolved=False  # Will be updated if user chooses to continue
+                    )
         
         # Create a copy of the connected_axes list to safely remove unused axes
         updated_connected_axes = list(self.test_axes)
@@ -2467,75 +2693,10 @@ class stage_checkout():
         self.station_print('Checking Limits and Hardstops', station_id=station_id)
         test = 'hardstop and limit check'
 
+        # Use the reusable check_single_axis_limit method for full sequence
         def check_single_axis(axis, direction):
-            """Handle hardstop check for a single axis."""
-            controller = self.station_controllers[axis]
-            station_id = self.axis_to_station_map.get(axis)
-            limit = 'Cw' if direction == 'cw' else 'Ccw'
-            
-            try:
-                # Check for abort before starting
-                if station_id in self.aborted_stations:
-                    raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-                
-                # Check that home speed isn't too fast for Ccw and Cw commands
-                home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
-                if home_speed >= 10:    
-                    controller.runtime.parameters.axes[axis].homing.homespeed.value = 5
-                    
-                if limit == 'Cw':
-                    controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
-                else:
-                    controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
-                time.sleep(2)
-                
-                controller.runtime.parameters.axes[axis].homing.homespeed.value = home_speed
-                
-                # Check for abort after move command
-                if station_id in self.aborted_stations:
-                    raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-                
-                controller.runtime.commands.motion.waitformotiondone([axis])
-                
-            except (ControllerAxisFaultException, ControllerOperationException):
-                faults_per_axis = self.check_for_faults(controller, [axis])
-                if faults_per_axis:
-                    self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
-                    time.sleep(2)
-            except TestSequenceAbort:
-                # Clean up and re-raise
-                try:
-                    controller.runtime.commands.motion.abort([axis])
-                    controller.runtime.commands.motion.disable([axis])
-                except:
-                    pass
-                raise
-            
-            time.sleep(3)
-            
-            # Check for abort before continuing
-            if station_id in self.aborted_stations:
-                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-            
-            # Move to limit and hardstop using this axis's controller
-            self.move_into_limit(controller, test, limit, axis)
-            faults_per_axis = self.check_for_faults(controller, [axis])
-            if faults_per_axis:
-                controller.runtime.commands.fault_and_error.acknowledgeall(1)
-
-            time.sleep(3)
-
-            # Check for abort before hardstop
-            if station_id in self.aborted_stations:
-                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
-            
-            self.move_into_hardstop(controller, test, limit, axis)
-            faults_per_axis = self.check_for_faults(controller, [axis])
-            if faults_per_axis:
-                controller.runtime.commands.fault_and_error.acknowledgeall(1)
-            
-            # Move out of hardstop using this axis's controller
-            self.move_out_of_hardstop(controller, limit, axis)
+            """Handle hardstop check for a single axis using the reusable method."""
+            self.check_single_axis_limit(axis, direction, test, full_sequence=True)
 
         try:
             # Run CCW checks in parallel
@@ -2585,6 +2746,86 @@ class stage_checkout():
                     pass
             raise  # Re-raise to stop the test sequence
 
+    def check_single_axis_limit(self, axis, direction, test='hardstop and limit check', full_sequence=True):
+        """
+        Handle limit/hardstop check for a single axis.
+        
+        Args:
+            axis: The axis to check
+            direction: 'ccw' or 'cw'
+            test: Test name for fault handling
+            full_sequence: If True, does full hardstop sequence. If False, just moves to limit.
+        """
+        controller = self.station_controllers[axis]
+        station_id = self.axis_to_station_map.get(axis)
+        limit = 'Cw' if direction == 'cw' else 'Ccw'
+        
+        try:
+            # Check for abort before starting
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+            
+            # Check that home speed isn't too fast for Ccw and Cw commands
+            home_speed = controller.runtime.parameters.axes[axis].homing.homespeed.value
+            if home_speed >= 10:    
+                controller.runtime.parameters.axes[axis].homing.homespeed.value = 5
+                
+            if limit == 'Cw':
+                controller.runtime.commands.execute(f'MoveToLimitCw({axis})', 1)
+            else:
+                controller.runtime.commands.execute(f'MoveToLimitCcw({axis})', 1)
+            time.sleep(2)
+            
+            controller.runtime.parameters.axes[axis].homing.homespeed.value = home_speed
+            
+            # Check for abort after move command
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+            
+            controller.runtime.commands.motion.waitformotiondone([axis])
+            
+        except (ControllerAxisFaultException, ControllerOperationException):
+            faults_per_axis = self.check_for_faults(controller, [axis])
+            if faults_per_axis:
+                self.handle_faults(test, {axis: faults_per_axis[axis]}, self.reenable_run_button)
+                time.sleep(2)
+        except TestSequenceAbort:
+            # Clean up and re-raise
+            try:
+                controller.runtime.commands.motion.abort([axis])
+                controller.runtime.commands.motion.disable([axis])
+            except:
+                pass
+            raise
+        
+        time.sleep(3)
+        
+        # Check for abort before continuing
+        if station_id in self.aborted_stations:
+            raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+        
+        # Move to limit and capture position
+        self.move_into_limit(controller, test, limit, axis)
+        faults_per_axis = self.check_for_faults(controller, [axis])
+        if faults_per_axis:
+            controller.runtime.commands.fault_and_error.acknowledgeall(1)
+
+        time.sleep(3)
+        
+        # If full sequence is requested, continue with hardstop
+        if full_sequence:
+            # Check for abort before hardstop
+            if station_id in self.aborted_stations:
+                raise TestSequenceAbort(f"Test aborted for station {station_id}", shown_message=True)
+            
+            self.move_into_hardstop(controller, test, limit, axis)
+            faults_per_axis = self.check_for_faults(controller, [axis])
+            if faults_per_axis:
+                controller.runtime.commands.fault_and_error.acknowledgeall(1)
+            
+            # Move out of hardstop using this axis's controller
+            self.move_out_of_hardstop(controller, limit, axis)
+    
     def move_into_limit(self, controller, test, limit, axis):
         """Move a single axis to its limit position."""
         test_time = 2
@@ -2816,6 +3057,13 @@ class stage_checkout():
         # Log the position of the current limit
         self.log_only(f'{limit} hardstop Position for {axis}: {end_position}', station_id=station_id)
         
+        # Update database collector with hardstop position data
+        if axis in self.part_collectors:
+            if limit == 'Ccw':
+                self.part_collectors[axis].set_positions(ccw_hardstop=end_position)
+            else:  # limit == 'Cw'
+                self.part_collectors[axis].set_positions(cw_hardstop=end_position)
+        
     def log_limit_pos(self, axis, limit, results):
         """Logs the current position of the given axis after it has reached its limit."""
         position_feedback = results.axis.get(a1.AxisDataSignal.PositionFeedback, axis).points
@@ -2863,6 +3111,13 @@ class stage_checkout():
         station_id = self.axis_to_station_map.get(axis)
         # Log the position of the current limit
         self.log_only(f'{limit} limit Position for {axis}: {end_position}', station_id=station_id)
+        
+        # Update database collector with position data
+        if axis in self.part_collectors:
+            if limit == 'Ccw':
+                self.part_collectors[axis].set_positions(ccw_limit=end_position)
+            else:  # limit == 'Cw'
+                self.part_collectors[axis].set_positions(cw_limit=end_position)
 
     def reset_controllers(self):
         """
@@ -2989,6 +3244,17 @@ class stage_checkout():
                 #self.station_print(f'Axis {axis}: CCW Hardstop Position = {ccw_hardstop_position}, CW Hardstop Position = {cw_hardstop_position}, Hardstop Distance = {hardstop_distance}', station_id=station_id)
                 self.log_only(f'Axis {axis} Distance between Ccw Limit and Cw Limit: {limit_distance}', station_id=station_id)
                 self.log_only(f'Axis {axis} Distance between Ccw hardstop and Cw hardstop: {hardstop_distance}', station_id=station_id)
+                
+                # Update database collector with distance measurements
+                if axis in self.part_collectors:
+                    self.part_collectors[axis].set_distances(
+                        limit_to_limit=limit_distance,
+                        hardstop_to_hardstop=hardstop_distance
+                    )
+                    # Calculate and set marker to limit distance if we have the data
+                    if "Home Marker from Limit" in self.data[axis] and self.data[axis]["Home Marker from Limit"]:
+                        marker_to_limit = abs(self.data[axis]["Home Marker from Limit"])
+                        self.part_collectors[axis].set_distances(marker_to_limit=marker_to_limit)
 
         except TestSequenceAbort as e:
             raise  # Re-raise without showing message again
@@ -3147,6 +3413,9 @@ class stage_checkout():
             self.station_print(f'Hall states for {axis} are in the correct order.', station_id=station_id)
             self.log_only(f'Hall states for {axis} are in the correct order.')
             self.data[axis]["Halls"] = "Passed"
+            # Update database collector with halls result
+            if axis in self.part_collectors:
+                self.part_collectors[axis].set_halls_result("fallback_method", "Passed")
         else:
             # Build expected hall sequence for positive encoder direction
             base_angles = [0, 60, 120, 180, 240, 300]
@@ -3172,6 +3441,9 @@ class stage_checkout():
                 self.station_print(f'Motor phasing misalignment detected for {axis}: ~{deg_shift}° offset from expected.', station_id=station_id)
                 self.log_only(f'Motor phasing misalignment detected for {axis}: ~{deg_shift}° offset from expected.', station_id=station_id)
                 self.data[axis]["Halls"] = "Failed (phasing)"
+                # Update database collector with failed halls result
+                if axis in self.part_collectors:
+                    self.part_collectors[axis].set_halls_result("fallback_method", "Failed")
 
                 # Offer auto-phasing to compute and apply commutation offset using 10° sweep
                 try:
@@ -3182,6 +3454,10 @@ class stage_checkout():
                         applied, delta, err = self.auto_commutation_offset(axis, step_deg=10)
                         if applied:
                             self.data[axis]["Halls"] = f"Passed (offset {delta:.1f}°)"
+                            # Update database collector with MSET method result and commutation offset
+                            if axis in self.part_collectors:
+                                self.part_collectors[axis].set_halls_result("mset_method", "Passed")
+                                self.part_collectors[axis].set_commutation_offset(delta)
                             self.station_print(
                                 f"Auto-phasing applied on {axis}. Proceeding with remaining checks.",
                                 station_id=station_id
@@ -3199,6 +3475,9 @@ class stage_checkout():
                 self.log_only(f'Hall sequence mismatch for {axis}.', station_id=station_id)
                 self.log_only(f'Observed states (unique): {unique_hall_states}', station_id=station_id)
                 self.data[axis]["Halls"] = "Failed (sequence)"
+                # Update database collector with failed halls result
+                if axis in self.part_collectors:
+                    self.part_collectors[axis].set_halls_result("fallback_method", "Failed")
 
                 # Release only this axis
                 self.release_axis(axis)
@@ -3311,3 +3590,261 @@ class stage_checkout():
                 with open(station_log_file, 'a') as f:
                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
                     f.write(f'{timestamp} - INFO - {message}\n')
+    
+    def extract_current_analysis_from_burnin(self, burnin_instance):
+        """
+        Extract current analysis data from burn-in results and update database collectors.
+        
+        Args:
+            burnin_instance: The burn-in instance containing axis data
+        """
+        try:
+            if hasattr(burnin_instance, 'axis_data') and burnin_instance.axis_data:
+                # Import BurnInPlotting to access current analysis functions
+                from BurnInPlotting import Burn_In_Plotting
+                
+                # Create plotting instance to access current analysis methods
+                plotting = Burn_In_Plotting(
+                    axis_data=burnin_instance.axis_data,
+                    stage_type=self.stage_type,
+                    burn_in_time=self.burnin_time,
+                    job=self.job,
+                    op=self.op,
+                    comments=self.comments,
+                    folder=self.job_log_dir,
+                    secondary_ui=self.secondary_ui,
+                    specs_dict=self.specs_dict,
+                    stations=self.stations,
+                    test_axes=self.test_axes
+                )
+                
+                # Extract current analysis for each axis
+                for axis in self.test_axes:
+                    if axis in self.part_collectors:
+                        station_id = self.axis_to_station_map.get(axis)
+                        try:
+                            # Calculate peak and RMS values for all cycles combined
+                            current_feedback_all = []
+                            acceleration_command_all = []
+                            
+                            # Gather data from all cycles for this axis
+                            for cycle in burnin_instance.axis_data.keys():
+                                if axis in burnin_instance.axis_data[cycle]:
+                                    current_feedback_all.extend(burnin_instance.axis_data[cycle][axis]['CurrentFeedback'])
+                                    acceleration_command_all.extend(burnin_instance.axis_data[cycle][axis].get('AccelerationCommand', []))
+                            
+                            if current_feedback_all:
+                                # Calculate peak-to-peak and RMS values
+                                peak_current = plotting.calculate_peak_to_peak(current_feedback_all)
+                                rms_current = plotting.calculate_rms(current_feedback_all, acceleration_command_all)
+                                
+                                # Update database collector with current analysis
+                                self.part_collectors[axis].set_current_analysis(
+                                    peak_current=round(peak_current, 4),
+                                    rms_current=round(rms_current, 4)
+                                )
+                                
+                                self.station_print(
+                                    f"Current analysis - Peak: {peak_current:.4f}, RMS: {rms_current:.4f}",
+                                    station_id=station_id
+                                )
+                            
+                        except Exception as e:
+                            self.station_print(f"Error extracting current analysis for {axis}: {str(e)}", station_id=station_id)
+                            
+        except Exception as e:
+            # Log error but don't fail the test
+            self.station_print(f"Error during current analysis extraction: {str(e)}")
+    
+    def _send_to_database_api(self, db_json: dict, test_status: str):
+        """
+        Send database JSON to the database API when available.
+        
+        Args:
+            db_json: The complete database JSON record
+            test_status: Status of the test (Complete, Failed, Aborted)
+        """
+        if not self.database_api_enabled or not self.database_api_url:
+            # API not available yet - print the JSON object for simulation
+            import json as json_module
+            print(f"\n=== DATABASE JSON SIMULATION ({test_status}) ===")
+            print(f"Stage: {db_json.get('StageSerialNumber', 'Unknown')}")
+            print("JSON Object:")
+            print(json_module.dumps(db_json, indent=2))
+            print("=" * 50)
+            return
+        
+        try:
+            import requests
+            import json as json_module
+            
+            # Prepare the API request
+            headers = {
+                'Content-Type': 'application/json',
+                # Add any additional headers your API requires (auth, etc.)
+            }
+            
+            # Make the API call
+            response = requests.post(
+                self.database_api_url,
+                headers=headers,
+                data=json_module.dumps(db_json),
+                timeout=30
+            )
+            
+            # Check response
+            if response.status_code == 200:
+                print(f"[DB API] Successfully sent: {db_json['StageSerialNumber']} ({test_status})")
+            else:
+                print(f"[DB API] Failed to send {db_json['StageSerialNumber']}: HTTP {response.status_code}")
+                # Optionally save failed records to retry later
+                self._save_failed_record(db_json, test_status)
+                
+        except Exception as e:
+            print(f"[DB API] Error sending {db_json['StageSerialNumber']}: {str(e)}")
+            # Save failed record for retry
+            self._save_failed_record(db_json, test_status)
+    
+    def _save_failed_record(self, db_json: dict, test_status: str):
+        """
+        Save failed database records to a file for manual retry or debugging.
+        
+        Args:
+            db_json: The database JSON that failed to send
+            test_status: Status of the test
+        """
+        try:
+            import json as json_module
+            from datetime import datetime
+            
+            # Create failed records directory if it doesn't exist
+            failed_dir = os.path.join(self.job_log_dir, "failed_database_records")
+            os.makedirs(failed_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{db_json['StageSerialNumber']}_{test_status}_{timestamp}.json"
+            filepath = os.path.join(failed_dir, filename)
+            
+            # Save the record
+            with open(filepath, 'w') as f:
+                json_module.dump(db_json, f, indent=2)
+            
+            print(f"[DB API] Saved failed record: {filepath}")
+            
+        except Exception as e:
+            print(f"[DB API] Error saving failed record: {str(e)}")
+    
+    def _capture_fault_data(self, axis: str, fault_list: list, resolved: bool = False):
+        """
+        Capture fault data and update the database collector.
+        
+        Args:
+            axis: The axis that experienced the fault
+            fault_list: List of fault descriptions
+            resolved: Whether the fault was resolved
+        """
+        if axis in self.part_collectors and fault_list:
+            try:
+                # Use the first (most significant) fault as the primary fault type
+                primary_fault = fault_list[0] if fault_list else "UnknownFault"
+                description = ", ".join(fault_list) if len(fault_list) > 1 else primary_fault
+                
+                # Update database collector with fault information
+                self.part_collectors[axis].add_fault(
+                    fault_type=primary_fault,
+                    description=description,
+                    resolved=resolved
+                )
+                
+                # Also log to rework tracker for future correlation
+                if not resolved:  # Only log unresolved faults for rework tracking
+                    self._log_fault_to_rework_tracker(axis, primary_fault, description)
+                
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Fault captured for database: {primary_fault}", station_id=station_id)
+                
+            except Exception as e:
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Error capturing fault data: {str(e)}", station_id=station_id)
+    
+    def _check_and_handle_pending_rework(self, axis: str, stage_serial: str):
+        """
+        Check if there's pending rework for this stage serial and handle rework dialog.
+        
+        Args:
+            axis: The axis being tested
+            stage_serial: Stage serial number to check for pending rework
+        """
+        try:
+            pending_rework = self.rework_tracker.get_pending_rework(stage_serial)
+            
+            if pending_rework:
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Previous fault detected for {stage_serial}, requesting rework solution...", station_id=station_id)
+                
+                # Show rework solution dialog
+                from tkinter import messagebox
+                import threading
+                
+                def show_rework_dialog():
+                    try:
+                        result = show_rework_solution_dialog(self.window, pending_rework)
+                        
+                        if result:
+                            solution, emp_number = result
+                            
+                            # Log the rework solution
+                            success = self.rework_tracker.log_rework_solution(
+                                stage_serial, solution, emp_number
+                            )
+                            
+                            if success:
+                                # Update the current test's database collector with rework info
+                                if axis in self.part_collectors:
+                                    self.part_collectors[axis].add_rework(
+                                        issue=pending_rework['fault_type'],
+                                        solution=solution,
+                                        emp_number=emp_number
+                                    )
+                                
+                                self.station_print(f"Rework solution logged for {stage_serial}", station_id=station_id)
+                            else:
+                                self.station_print(f"Error logging rework solution for {stage_serial}", station_id=station_id)
+                        else:
+                            self.station_print(f"Rework solution dialog cancelled for {stage_serial}", station_id=station_id)
+                    
+                    except Exception as e:
+                        self.station_print(f"Error handling rework dialog: {str(e)}", station_id=station_id)
+                
+                # Run dialog in main thread to avoid UI issues
+                self.window.after(100, show_rework_dialog)
+                
+        except Exception as e:
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f"Error checking pending rework: {str(e)}", station_id=station_id)
+    
+    def _log_fault_to_rework_tracker(self, axis: str, fault_type: str, fault_description: str = None):
+        """
+        Log a fault to the rework tracker for future correlation.
+        
+        Args:
+            axis: The axis that experienced the fault
+            fault_type: Type of fault that occurred
+            fault_description: Optional detailed description
+        """
+        try:
+            if axis in self.part_collectors:
+                stage_serial = self.part_collectors[axis].stage_serial_number
+                
+                # Log fault to rework tracker
+                rework_id = self.rework_tracker.log_fault(
+                    stage_serial, fault_type, fault_description
+                )
+                
+                station_id = self.axis_to_station_map.get(axis)
+                self.station_print(f"Fault logged to rework tracker: {fault_type} (ID: {rework_id})", station_id=station_id)
+                
+        except Exception as e:
+            station_id = self.axis_to_station_map.get(axis)
+            self.station_print(f"Error logging fault to rework tracker: {str(e)}", station_id=station_id)
