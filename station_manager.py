@@ -183,10 +183,15 @@ class StationManager:
     def _check_single_station(self, station, ip):
         """Check connectivity of a single station"""
         try:
-            # Simple ping-like check (replace with actual connectivity check if needed)
-            response = requests.get(f"http://{ip}", timeout=1)
-            return (station, True)
-        except:
+            # Use socket connection test instead of HTTP for motion controllers
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)  # 1 second timeout
+            result = sock.connect_ex((ip, 8000))  # Common port for Aerotech controllers
+            sock.close()
+            return (station, result == 0)  # 0 means connection successful
+        except Exception as e:
+            print(f"Error checking station {station} at {ip}: {e}")
             return (station, False)
     
     def _update_station_status(self, station, is_connected):

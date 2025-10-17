@@ -12,6 +12,11 @@ import sqlite3 as lite
 import datetime
 import numpy as np
 import traceback
+# Suppress matplotlib backend messages
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+plt.ioff()  # Turn off interactive mode
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
 
 # Version 1.08
