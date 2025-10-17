@@ -147,24 +147,16 @@ def launch_secondary_ui(focus_widget=None):
     """Launch the secondary UI in a new thread."""
     def run_secondary_ui():
         global secondary_ui
-        print("DEBUG: About to create SecondaryUI instance")
         secondary_ui_instance = SecondaryUI()
-        print(f"DEBUG: SecondaryUI instance created: {secondary_ui_instance}")
         
         # Set in both global variable and registry for compatibility
         secondary_ui = secondary_ui_instance
         secondary_ui_registry.set_secondary_ui(secondary_ui_instance)
         
-        print(f"DEBUG: Global secondary_ui is now: {secondary_ui}")
-        print(f"DEBUG: Registry secondary_ui is now: {secondary_ui_registry.get_secondary_ui()}")
-        
         secondary_ui_instance.run()
-        print("DEBUG: SecondaryUI.run() completed")
 
-    print("DEBUG: Launching secondary UI thread")
     thread = threading.Thread(target=run_secondary_ui, daemon=True)
     thread.start()
-    print("DEBUG: Secondary UI thread started")
     
     # Give the secondary UI time to launch, then refocus main window
     if focus_widget:
