@@ -267,6 +267,7 @@ def UI():
     # Initialize StationManager
     station_manager = StationManager(window)
     set_station_manager(station_manager)
+    station_manager.start()  # Start the background thread for station management
     
     # Load stored user inputs
     stored_data = load_user_inputs()

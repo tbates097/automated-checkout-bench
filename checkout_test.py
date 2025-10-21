@@ -991,7 +991,7 @@ class stage_checkout():
                 # Only print completion if we get here
                 if self.test_axes:  # Check if we still have axes to test
                     station_id = [self.axis_to_station_map[axis] for axis in self.test_axes]
-                    self.station_print(f"Test completed for {axis}.", station_id=station_id)
+                    self.station_print(f"Test completed for {', '.join(self.test_axes)}.", station_id=station_id)
                     
                     # Generate database JSON for completed tests
                     for axis in self.test_axes:
@@ -1005,6 +1005,35 @@ class stage_checkout():
                             except Exception as e:
                                 axis_station_id = self.axis_to_station_map[axis]
                                 self.station_print(f"Error generating database record: {str(e)}", station_id=axis_station_id)
+                    
+                    # Release stations and update UI for each completed axis
+                    for axis in list(self.test_axes):
+                        try:
+                            axis_station_id = self.axis_to_station_map[axis]
+                            
+                            # Update secondary UI - clear status and serial
+                            self.secondary_ui.update_station_status(axis_station_id, running=False, serial="")
+                            self.station_print(f"Station {axis_station_id} test completed and released", station_id=axis_station_id)
+                            
+                            # Release station via StationManager
+                            from station_manager_instance import get_station_manager
+                            sm = get_station_manager()
+                            if sm:
+                                sm.release_stations(axis)
+                                sm.refresh_station_status()
+                                
+                        except Exception as e:
+                            self.station_print(f"Error releasing station {axis}: {str(e)}", station_id=self.axis_to_station_map.get(axis))
+                    
+                    # Show single test completion messagebox for the entire job
+                    try:
+                        job_description = f"Job {self.job}" if len(self.test_axes) > 1 else f"Axis {self.test_axes[0]}"
+                        messagebox.showinfo(
+                            "Test Completed", 
+                            f"Test has been completed successfully for {job_description}."
+                        )
+                    except Exception as e:
+                        self.station_print(f"Error showing completion messagebox: {str(e)}", station_id=station_id)
 
             except TestSequenceAbort:
                 raise
@@ -1564,21 +1593,22 @@ class stage_checkout():
         self.fault_log.info(f"  Method 4 (-avg mod 60): {method4_offset:.1f}°")
         self.fault_log.info(f"  Method 5 (centered): {method5_offset:.1f}°")
         
-        # Find method closest to A1's typical calculation
-        a1_reference = 19.0
+        # Use the method that was determined to match A1's algorithm
+        # Based on testing, the "complement" method (60° - avg_residue) consistently 
+        # matches Automation1's commutation offset calculation approach
+        delta_deg = method3_offset  # 60.0 - avg_residue
+        
+        self.fault_log.info(f"Auto-phase using complement method for {axis}: 60° - {avg_residue:.1f}° = {delta_deg:.1f}°")
+        
+        # Log all methods for reference but always use the complement method
         methods = {
             'avg_residue': avg_residue,
-            'most_common': float(most_common_residue),
+            'most_common': float(most_common_residue), 
             'complement': method3_offset,
             'negative': method4_offset,
             'centered': method5_offset
         }
-        
-        closest_method = min(methods.items(), key=lambda x: abs(x[1] - a1_reference))
-        self.fault_log.info(f"Auto-phase selected method for {axis}: {closest_method[0]} = {closest_method[1]:.1f}° (closest to A1 reference)")
-        
-        # Use the method that best matches A1's approach
-        delta_deg = float(closest_method[1])
+        self.fault_log.info(f"Auto-phase all methods for {axis}: {methods}")
         
         # Estimate residual misalignment after applying delta (relative to this dataset)
         def circ_dist_deg(x):
@@ -2351,6 +2381,9 @@ class stage_checkout():
                     # In phase
                     self.data[axis]["Halls"] = "Passed"
                     self.station_print(f"Halls Passed for {axis}", station_id=station_id)
+                    # Update database collector with MSET method result
+                    if axis in self.part_collectors:
+                        self.part_collectors[axis].set_halls_result("mset_method", "Passed")
                     return
                 
                 if is_rot or delta_deg > threshold:
@@ -2366,6 +2399,10 @@ class stage_checkout():
                             controller.runtime.commands.motion.enable([axis])
                             self.data[axis]["Halls"] = f"Passed (offset {delta_deg:.1f}°)"
                             self.station_print(f"Applied offset {delta_deg:.1f}°; Halls Passed for {axis}", station_id=station_id)
+                            # Update database collector with MSET method result and commutation offset
+                            if axis in self.part_collectors:
+                                self.part_collectors[axis].set_halls_result("mset_method", "Passed")
+                                self.part_collectors[axis].set_commutation_offset(float(delta_deg))
                             return
                         except Exception as e:
                             messagebox.showerror("Auto Phasing", f"Failed to apply commutation offset on {axis}: {e}")
@@ -2376,6 +2413,9 @@ class stage_checkout():
                 # Not rotation/progressive: treat as sequence mismatch
                 self.station_print(f"Hall sequence for {axis} does not match expected order for positive encoder motion.", station_id=station_id)
                 self.data[axis]["Halls"] = "Failed (sequence)"
+                # Update database collector with MSET method failure
+                if axis in self.part_collectors:
+                    self.part_collectors[axis].set_halls_result("mset_method", "Failed")
                 self.release_axis(axis)
                 return
             except TestSequenceAbort:

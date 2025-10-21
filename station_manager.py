@@ -4,6 +4,7 @@ import time
 import json
 import os
 import requests
+import logging
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,6 +17,15 @@ class StationManager:
         self.station_dict = self.load_station_config()
         self.update_thread = None
         self.running = False
+        
+        # Set up logging for station manager (separate from main UI)
+        self.logger = logging.getLogger('station_manager')
+        self.logger.setLevel(logging.WARNING)  # Only log warnings and errors
+        if not self.logger.handlers:
+            handler = logging.FileHandler('station_manager.log')
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
         
         # Initialize station states
         self.station_states = {
@@ -35,7 +45,7 @@ class StationManager:
                 with open(STATION_CONFIG_FILE, 'r') as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                print(f"Error reading {STATION_CONFIG_FILE}. Using default configuration.")
+                self.logger.warning(f"Error reading {STATION_CONFIG_FILE}. Using default configuration.")
         return {
             'ST01': '192.168.1.10',
             'ST02': '192.168.1.11',
@@ -68,15 +78,21 @@ class StationManager:
 
     def _background_update_loop(self):
         """Background loop to process station updates"""
+        connectivity_check_counter = 0
         while self.running:
             try:
-                self._check_station_connectivity()
+                # Only check connectivity every 50 iterations (5 seconds)
+                connectivity_check_counter += 1
+                if connectivity_check_counter >= 50:
+                    self._check_station_connectivity()
+                    connectivity_check_counter = 0
+                
                 while not station_update_queue.empty():
                     update = station_update_queue.get_nowait()
                     self._process_station_update(update)
                 time.sleep(0.1)
             except Exception as e:
-                print(f"Error in background update loop: {e}")
+                self.logger.error(f"Error in background update loop: {e}")
 
     def _check_station_connectivity(self):
         """Check connectivity of all stations"""
@@ -92,7 +108,9 @@ class StationManager:
                         station, is_connected = result
                         self._update_station_status(station, is_connected)
                 except Exception as e:
-                    print(f"Error checking station status: {e}")
+                    # Silently ignore connectivity check errors to avoid UI spam
+                    # Only log to file for debugging if needed
+                    pass
 
     def set_station_in_use(self, station, serial_number, program_id):
         """Mark a station as in-use"""
@@ -191,7 +209,7 @@ class StationManager:
             sock.close()
             return (station, result == 0)  # 0 means connection successful
         except Exception as e:
-            print(f"Error checking station {station} at {ip}: {e}")
+            # Silently handle connection failures - stations may be offline
             return (station, False)
     
     def _update_station_status(self, station, is_connected):
